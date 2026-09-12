@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="omnifactum">
+  <title>omnifactum</title>
+  <rect width="256" height="256" rx="56" fill="#1B1F2E"/>
+  <g transform="translate(128 128) scale(1.1) translate(-128 -128)"
+     fill="none" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+    <!-- the open ring: the "o" of omnifactum, broken where the check passes through -->
+    <path d="M 189.6 104.4 A 66 66 0 1 1 147.3 64.9" stroke="#E8EAF0"/>
+    <!-- the check, its long arm rising out through the gap -->
+    <path d="M 90 132 L 112 154 L 193.3 55.1" stroke="#34D399"/>
+  </g>
+</svg>

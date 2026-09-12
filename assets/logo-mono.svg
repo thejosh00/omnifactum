@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="omnifactum">
+  <title>omnifactum</title>
+  <g transform="translate(128 128) scale(1.1) translate(-128 -128)"
+     fill="none" stroke="currentColor" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 189.6 104.4 A 66 66 0 1 1 147.3 64.9"/>
+    <path d="M 90 132 L 112 154 L 193.3 55.1"/>
+  </g>
+</svg>

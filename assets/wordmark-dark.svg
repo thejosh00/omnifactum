@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -18 1268 174" width="1268" height="174" role="img" aria-label="omnifactum">
+  <title>omnifactum</title>
+
+  <!-- mark -->
+  <g transform="translate(0 -12)">
+    <rect width="156" height="156" rx="34" fill="#1B1F2E"/>
+    <g transform="translate(0 0) scale(0.609375)">
+      <g transform="translate(128 128) scale(1.1) translate(-128 -128)"
+         fill="none" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 189.6 104.4 A 66 66 0 1 1 147.3 64.9" stroke="#E8EAF0"/>
+        <path d="M 90 132 L 112 154 L 193.3 55.1" stroke="#34D399"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- wordmark: monoline geometric, drawn as paths so no font is required -->
+  <g transform="translate(196 16)" fill="none" stroke="#E8EAF0"
+     stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 7 50 A 43 43 0 1 0 93 50 A 43 43 0 1 0 7 50"/>
+    <path d="M 131 100 L 131 0 M 131 30 A 30 30 0 0 1 191 30 L 191 100 M 191 30 A 30 30 0 0 1 251 30 L 251 100"/>
+    <path d="M 289 100 L 289 0 M 289 30 A 30 30 0 0 1 349 30 L 349 100"/>
+    <path d="M 387 100 L 387 0"/>
+    <circle cx="387" cy="-26" r="7" fill="#E8EAF0" stroke="none"/>
+    <path d="M 473 -32 A 26 26 0 0 0 447 -6 L 447 100 M 425 16 L 481 16"/>
+    <path d="M 519 50 A 43 43 0 1 0 605 50 A 43 43 0 1 0 519 50 M 605 0 L 605 100"/>
+    <path d="M 710.7 14.8 A 43 43 0 1 0 710.7 85.2"/>
+    <path d="M 771 -30 L 771 100 M 749 16 L 797 16"/>
+    <path d="M 835 0 L 835 70 A 30 30 0 0 0 895 70 M 895 0 L 895 100"/>
+    <path d="M 933 100 L 933 0 M 933 30 A 30 30 0 0 1 993 30 L 993 100 M 993 30 A 30 30 0 0 1 1053 30 L 1053 100"/>
+  </g>
+</svg>
