@@ -24,6 +24,18 @@ afterEach(() => {
   vault.cleanup();
 });
 
+/** One task in the archive, where the only thing left to do to it is delete it. */
+function seedDone(): void {
+  vault.put(
+    'done/2026-09/shipped-it.md',
+    taskFile({
+      id: '0tq7f2k9dddd',
+      title: 'Shipped it',
+      extra: 'completed: 2026-09-11T09:00:00Z',
+    }),
+  );
+}
+
 function seed(): void {
   vault.put('next/fix-printer.md', taskFile({id: '0tq7f2k9aaaa', title: 'Fix printer', tags: ['home', 'agent']}));
   vault.put('next/draft-memo.md', taskFile({id: '0tq7f2k9bbbb', title: 'Draft the memo', tags: ['work']}));
@@ -350,6 +362,48 @@ describe('deleting, which has no undo', () => {
     expect(ui.frame()).toContain('deleted fix-printer');
     expect(vault.exists('next/fix-printer.md')).toBe(false);
   });
+
+  test('a finished task can be cleared out of the archive', async () => {
+    seedDone();
+    const ui = start({list: 'done'});
+
+    await ui.press('X');
+    await ui.press('y');
+
+    expect(ui.frame()).toContain('deleted shipped-it');
+    expect(vault.exists('done/2026-09/shipped-it.md')).toBe(false);
+  });
+
+  test('the done list offers X where every other list offers x', async () => {
+    seed();
+    seedDone();
+    const ui = start();
+
+    expect(ui.frame()).toContain('x done');
+
+    await ui.press('6');
+    expect(ui.frame()).toContain('X delete');
+    expect(ui.frame()).not.toContain('x done');
+  });
+
+  test('the detail view of a finished task offers it too', async () => {
+    seedDone();
+    const ui = start({list: 'done'});
+
+    await ui.press(ENTER);
+    expect(ui.frame()).toContain('X delete');
+  });
+
+  test('x on a finished task says which key does work there', async () => {
+    seedDone();
+    const ui = start({list: 'done'});
+
+    await ui.press('x');
+
+    expect(ui.frame()).toContain('already done');
+    expect(ui.frame()).toContain('X deletes it');
+    expect(vault.exists('done/2026-09/shipped-it.md')).toBe(true);
+  });
 });
 
 describe('the detail view', () => {
@@ -440,6 +494,36 @@ describe('the projects view', () => {
     const ui = start();
     await ui.press('p');
     expect(ui.frame()).toContain('more than one action');
+  });
+});
+
+describe('the frame describes the screen it is on', () => {
+  test('a list says how many it shows and which task the cursor is on', () => {
+    seed();
+    const frame = start().frame();
+    expect(frame).toContain('2 shown');
+    expect(frame).toContain('0tq7f2k9');
+  });
+
+  test('the projects view names itself rather than the list behind it', async () => {
+    seed();
+    const ui = start();
+    await ui.press('p');
+
+    const frame = ui.frame();
+    expect(frame).toContain('projects');
+    expect(frame).not.toContain('shown');
+    // No task is in front of you, so there is no reference to copy.
+    expect(frame).not.toContain('0tq7f2k9');
+  });
+
+  test('help carries no task id either', async () => {
+    seed();
+    const ui = start();
+    await ui.press('?');
+
+    expect(ui.frame()).not.toContain('0tq7f2k9');
+    expect(ui.frame()).not.toContain('shown');
   });
 });
 

@@ -135,6 +135,20 @@ describe('the annotations that follow a title', () => {
     const segments = metaSegments({tags: [], waitingOn: 'Acme'}, NOW);
     expect(segments[0]).toMatchObject({kind: 'waiting', text: 'waiting on Acme'});
   });
+
+  test('a submission names who handed it in and how long it has waited', () => {
+    const segments = metaSegments(
+      {tags: [], submitted: {actor: 'agent:claude', at: '2026-09-10T08:00:00Z'}},
+      NOW,
+    );
+    expect(segments[0]).toMatchObject({kind: 'submitted', text: 'agent:claude 2d ago', actor: 'agent:claude'});
+  });
+
+  test('a submission with no named actor is just its age', () => {
+    const segments = metaSegments({tags: [], submitted: {actor: '', at: NOW}}, NOW);
+    expect(segments[0]?.text).toBe('today');
+    expect(segments[0]?.actor).toBeUndefined();
+  });
 });
 
 describe('measuring the annotations', () => {

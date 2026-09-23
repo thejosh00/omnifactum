@@ -42,6 +42,35 @@ function submitted(): void {
 }
 
 describe('sending reviewed work back', () => {
+  test('the row says whose work it is and how long it has waited', () => {
+    submitted();
+    const app = start({list: 'review'});
+    expect(app.rows()[0]).toContain('agent:claude-code today');
+  });
+
+  test('the hints speak as a reviewer: accept, or send back', () => {
+    submitted();
+    const frame = start({list: 'review'}).frame();
+    expect(frame).toContain('x accept');
+    expect(frame).toContain('m send back');
+    expect(frame).not.toContain('x done');
+  });
+
+  test('x accepts it, asking the reviewer the reviewer\'s question', async () => {
+    submitted();
+    const app = start({list: 'review'});
+
+    await app.press('x');
+    expect(app.frame()).toContain('accepting it');
+    expect(app.frame()).not.toContain('what did you do?');
+
+    await app.type('Looks right.');
+    await app.press(ENTER);
+
+    expect(vault.read('done/2026-09/fix-printer.md')).toContain('**you** — Looks right.');
+    expect(app.frame()).toContain('done: Fix printer');
+  });
+
   test('asks why before it moves anything', async () => {
     submitted();
     const app = start({list: 'review'});

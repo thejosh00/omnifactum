@@ -5,6 +5,10 @@
  * of lists you already have, with a different question asked of each. That is why it
  * needed no new way to change a task — every key that works on a list works here, so
  * you can act on what you find without leaving the walk.
+ *
+ * The keys for the walk itself live in the app's hint row, not here. They used to be
+ * printed in the header too, directly above a hint row that offered the plain list's
+ * keys instead — two rows of keys on one screen, disagreeing.
  */
 import React from 'react';
 import {Box, Text} from 'ink';
@@ -14,11 +18,9 @@ export interface WeeklyScreenProps {
   step: ReviewStep;
   index: number;
   total: number;
-  /** True on the last step, where advancing records the pass. */
-  last: boolean;
 }
 
-export function WeeklyHeader({step, index, total, last}: WeeklyScreenProps): React.ReactElement {
+export function WeeklyHeader({step, index, total}: WeeklyScreenProps): React.ReactElement {
   const clear = step.flags.length === 0;
 
   return (
@@ -52,12 +54,6 @@ export function WeeklyHeader({step, index, total, last}: WeeklyScreenProps): Rea
           )}
         </Box>
       )}
-
-      <Box marginTop={1}>
-        <Text dimColor>
-          {last ? 'n finishes and records this pass' : 'n next step   b back   esc leave'}
-        </Text>
-      </Box>
     </Box>
   );
 }

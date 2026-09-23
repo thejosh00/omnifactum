@@ -399,10 +399,13 @@ export function App({
         case 'complete':
           if (active === undefined) return;
           if (active.task.state === 'done') {
-            note('already done');
+            // The dead key is the natural moment to say what the live one is.
+            note('already done — X deletes it');
             return;
           }
-          askForNote({kind: 'complete'});
+          // Completing work in review is accepting it, and the prompt should ask the
+          // reviewer's question rather than the doer's "what did you do?".
+          askForNote(active.task.state === 'review' ? {kind: 'move', to: 'done'} : {kind: 'complete'});
           return;
 
         case 'note':
@@ -716,10 +719,13 @@ export function App({
 
           if (purpose.kind === 'move') {
             const to = purpose.to;
-            const result = live.update(active.task.id, task =>
-              planMove(task, to, {nowIso: live.now(), ...(text.length === 0 ? {} : {note: text})}),
-            );
-            report(result, `moved to ${to}`);
+            const result = live.update(active.task.id, task => {
+              if (to === 'done' && task.state === 'done') {
+                throw new Error('it was completed by someone else first');
+              }
+              return planMove(task, to, {nowIso: live.now(), ...(text.length === 0 ? {} : {note: text})});
+            });
+            report(result, to === 'done' ? `done: ${title}` : `moved to ${to}`);
             closeOverlay();
             return;
           }
@@ -756,6 +762,29 @@ export function App({
   const tagNames = useMemo(() => snapshot.tags.map(use => use.tag), [snapshot.tags]);
   const projectStems = useMemo(() => snapshot.projects.map(file => file.stem), [snapshot.projects]);
 
+  // What the status bar calls a screen that is not a task list. The weekly walk's
+  // progress is in its own header, so the bar only has to say which ritual this is.
+  // Kept to a word: the tab strip already fills most of an 80-column line.
+  const screen =
+    view.mode === 'help'
+      ? 'keys'
+      : view.mode === 'projects'
+        ? 'projects'
+        : inWeekly
+          ? 'weekly'
+          : undefined;
+
+  // The footer id is for copying a reference into a shell command, so it shows only
+  // while there is a task in front of you to refer to. Projects and help have none, and
+  // the weekly walk's project step has only the list it stepped away from.
+  const weeklyProjects = inWeekly && step?.kind === 'projects';
+  const footerId =
+    view.mode === 'clarify'
+      ? clarifyFile?.task.id
+      : view.mode === 'help' || view.mode === 'projects' || view.mode === 'capture' || weeklyProjects
+        ? undefined
+        : active?.task.id;
+
   // Status line, the input row, the banner and the hints all take one row each.
   const chrome = 5;
   const bodyHeight = Math.max(3, rows - chrome);
@@ -769,6 +798,7 @@ export function App({
         query={view.query}
         showDeferred={view.showDeferred}
         watching={watching}
+        screen={screen}
       />
       <Rule width={columns} />
 
@@ -788,7 +818,6 @@ export function App({
               step={step}
               index={weeklyStep}
               total={weekly.steps.length}
-              last={weeklyStep === weekly.steps.length - 1}
             />
             <Box marginTop={1} flexDirection="column">
               {step.kind === 'projects' ? (
@@ -849,7 +878,14 @@ export function App({
         onCancel={view.mode === 'clarify' ? leaveClarify : closeOverlay}
       />
       <Banner message={banner?.message} tone={banner?.tone ?? 'info'} />
-      <Hints hints={hintsFor(view.mode, clarifyQuestion)} selectedId={active?.task.id} />
+      <Hints
+        hints={hintsFor(view.mode, {
+          clarifyQuestion,
+          taskState: active?.task.state,
+          weekly: inWeekly ? {last: weeklyStep === weekly.steps.length - 1, projects: weeklyProjects} : undefined,
+        })}
+        selectedId={footerId}
+      />
     </Box>
   );
 }
@@ -978,7 +1014,33 @@ function notePrompt(purpose: NotePurpose | undefined): {prompt: string; placehol
   }
 }
 
-function hintsFor(mode: Mode, clarifyQuestion?: ClarifyQuestion): Array<[string, string]> {
+/**
+ * The hint row, which says what the *selected* task can be done to rather than what a
+ * task can be done to in general.
+ *
+ * Two states make the difference. A completed task has a dead `x` — it can only answer
+ * "already done" — and the thing actually wanted in the archive is a delete, which is
+ * otherwise the one action with no hint anywhere. So on a finished task the row offers
+ * `X` in the slot `x` would have taken. And a task in review is someone else's work
+ * waiting on a verdict: `x` accepts it and `m` sends it back, and the row says so in
+ * those words, because "done" and "move" are not how a reviewer thinks of either.
+ *
+ * Every variant has to fit an 80-column terminal alongside the task id, or Ink wraps
+ * the row, so the review variants drop a key rather than add one.
+ */
+interface HintContext {
+  clarifyQuestion?: ClarifyQuestion | undefined;
+  taskState?: TaskState | undefined;
+  /** Set while the weekly walk is showing. */
+  weekly?: {last: boolean; projects: boolean} | undefined;
+}
+
+function hintsFor(mode: Mode, context: HintContext = {}): Array<[string, string]> {
+  const {clarifyQuestion, taskState, weekly} = context;
+  const reviewing = taskState === 'review';
+  const act: [string, string] =
+    taskState === 'done' ? ['X', 'delete'] : reviewing ? ['x', 'accept'] : ['x', 'done'];
+
   switch (mode) {
     case 'filter':
     case 'capture':
@@ -992,9 +1054,19 @@ function hintsFor(mode: Mode, clarifyQuestion?: ClarifyQuestion): Array<[string,
         ['ctrl-w', 'delete word'],
       ];
     case 'detail':
+      if (reviewing) {
+        return [
+          ['esc', 'back'],
+          act,
+          ['m', 'send back'],
+          ['N', 'note'],
+          ['e', '$EDITOR'],
+          ['?', 'help'],
+        ];
+      }
       return [
         ['esc', 'back'],
-        ['x', 'done'],
+        act,
         ['t', 'tags'],
         ['N', 'note'],
         ['m', 'move'],
@@ -1024,11 +1096,32 @@ function hintsFor(mode: Mode, clarifyQuestion?: ClarifyQuestion): Array<[string,
       ];
     case 'help':
       return [['any key', 'back']];
+    case 'weekly': {
+      const walk: Array<[string, string]> = [
+        ['n', weekly?.last === true ? 'finish and record' : 'next step'],
+        ['b', 'back'],
+      ];
+      // The project step shows no tasks, and a step already cleared has none left, so
+      // there is nothing to open or act on.
+      const task: Array<[string, string]> =
+        weekly?.projects === true || taskState === undefined ? [] : reviewing ? [act, ['m', 'send back']] : [act, ['enter', 'open']];
+      return [...walk, ...task, ['esc', 'leave'], ['?', 'help']];
+    }
     default:
+      if (reviewing) {
+        return [
+          ['/', 'filter'],
+          act,
+          ['m', 'send back'],
+          ['enter', 'open'],
+          ['?', 'help'],
+          ['q', 'quit'],
+        ];
+      }
       return [
         ['/', 'filter'],
         ['c', 'capture'],
-        ['x', 'done'],
+        act,
         ['enter', 'open'],
         ['?', 'help'],
         ['q', 'quit'],

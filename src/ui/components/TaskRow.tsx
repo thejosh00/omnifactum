@@ -60,6 +60,15 @@ function Segment({segment}: {segment: MetaSegment}): React.ReactElement {
   }
 
   if (segment.kind === 'waiting') return <Text color="yellow">{segment.text}</Text>;
+  if (segment.kind === 'submitted' && segment.actor !== undefined) {
+    // Coloured the way the detail view colours the log, so an agent reads as one here too.
+    return (
+      <Text>
+        <Text color={segment.actor.startsWith('agent:') ? 'magenta' : undefined}>{segment.actor}</Text>
+        <Text dimColor>{segment.text.slice(segment.actor.length)}</Text>
+      </Text>
+    );
+  }
   return <Text dimColor>{segment.text}</Text>;
 }
 

@@ -213,11 +213,17 @@ export const removeCommand: Command = ctx => {
   return runWrite(ctx, () =>
     withTask(ctx, ref, file => {
       if (!hasFlag(ctx.args, 'yes') && !hasFlag(ctx.args, 'force')) {
+        // Parking it in someday is the gentler alternative to deleting a live task, and
+        // no alternative at all for a finished one: there is nothing left to defer.
+        const hint =
+          file.task.state === 'done'
+            ? 're-run with --yes'
+            : `re-run with --yes, or use "omni mv ${ref} someday" instead`;
         return fail(
           ctx,
           `"${file.task.title}" would be deleted permanently. There is no undo.`,
           EXIT_USAGE,
-          {hint: `re-run with --yes, or use "omni mv ${ref} someday" instead`},
+          {hint},
         );
       }
 

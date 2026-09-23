@@ -85,7 +85,7 @@ export function timeAgo(at: string, nowIso: string): string {
  *
  * Rendering and measuring share this one definition so they cannot disagree.
  */
-export type MetaKind = 'project' | 'tag' | 'due' | 'defer' | 'waiting';
+export type MetaKind = 'project' | 'tag' | 'due' | 'defer' | 'waiting' | 'submitted';
 
 export interface MetaSegment {
   kind: MetaKind;
@@ -96,6 +96,8 @@ export interface MetaSegment {
   urgency?: Urgency;
   /** A project reference that does not resolve. */
   dangling?: boolean;
+  /** For a submission, who handed it in, so the name can be coloured apart from the age. */
+  actor?: string;
 }
 
 export interface MetaInput {
@@ -104,6 +106,12 @@ export interface MetaInput {
   due?: string | undefined;
   defer?: string | undefined;
   waitingOn?: string | undefined;
+  /**
+   * Who last touched a task in `review/`, and when. On the review list that is the
+   * question being asked — whose work is this, and how long has it sat here — and it
+   * is otherwise only visible by opening each task in turn.
+   */
+  submitted?: {actor: string; at: string} | undefined;
 }
 
 export function metaSegments(
@@ -137,6 +145,16 @@ export function metaSegments(
 
   if (task.waitingOn !== undefined) {
     segments.push({kind: 'waiting', text: `waiting on ${task.waitingOn}`});
+  }
+
+  if (task.submitted !== undefined) {
+    const {actor, at} = task.submitted;
+    const age = timeAgo(at, nowIso);
+    segments.push({
+      kind: 'submitted',
+      text: actor.length > 0 ? `${actor} ${age}` : age,
+      ...(actor.length > 0 ? {actor} : {}),
+    });
   }
 
   return segments;

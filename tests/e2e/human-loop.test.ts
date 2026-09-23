@@ -188,6 +188,30 @@ describe('deletion is real, and says so', () => {
     expect((await omni(['rm', 'disposable', '--yes'], {dir: v.dir, now: NOW})).code).toBe(0);
     expect(v.list()).toEqual([]);
   });
+
+  test('a finished task can be cleared out of the archive', async () => {
+    const v = openVault();
+    await omni(['init'], {dir: v.dir, now: NOW});
+    await omni(['add', 'Shipped it'], {dir: v.dir, now: NOW});
+    await omni(['done', 'shipped-it'], {dir: v.dir, now: NOW});
+    expect(v.list()).toEqual(['done/2026-09/shipped-it.md']);
+
+    expect((await omni(['rm', 'shipped-it', '--yes'], {dir: v.dir, now: NOW})).code).toBe(0);
+    expect(v.list()).toEqual([]);
+  });
+
+  test('it does not offer someday for something already finished', async () => {
+    const v = openVault();
+    await omni(['init'], {dir: v.dir, now: NOW});
+    await omni(['add', 'Shipped it'], {dir: v.dir, now: NOW});
+    await omni(['done', 'shipped-it'], {dir: v.dir, now: NOW});
+
+    const result = await omni(['rm', 'shipped-it'], {dir: v.dir, now: NOW});
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('no undo');
+    expect(result.stderr).not.toContain('someday');
+    expect(v.list()).toEqual(['done/2026-09/shipped-it.md']);
+  });
 });
 
 describe('referring to a task', () => {

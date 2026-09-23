@@ -15,6 +15,12 @@ export interface StatusBarProps {
   query: string;
   showDeferred: boolean;
   watching: boolean;
+  /**
+   * The screen being shown, when it is not a task list — projects, help, the weekly
+   * walk. The tab strip still carries the counts, but no tab is lit and nothing about
+   * the list behind it is described, because that list is not what is on screen.
+   */
+  screen?: string | undefined;
 }
 
 export function StatusBar({
@@ -24,11 +30,13 @@ export function StatusBar({
   query,
   showDeferred,
   watching,
+  screen,
 }: StatusBarProps): React.ReactElement {
   return (
     <Box>
       {LISTS.map((name, index) => {
-        const active = name === list;
+        const active = screen === undefined && name === list;
+        const count = counts[name];
         return (
           <Text key={name}>
             {/*
@@ -37,22 +45,36 @@ export function StatusBar({
               token. A space now separates each of them from the name.
               Only the leading key is dimmed: it is chrome, a shortcut you learn once.
               The count is the thing you are actually reading off this row, so it stays
-              at full weight alongside the name.
+              at full weight alongside the name — unless it is zero, which is nothing to read.
+              Work in review is the exception the other way: it is waiting on you, and
+              reads that way whichever list you are on.
             */}
             <Text dimColor>{index + 1} </Text>
             <Text color={active ? 'cyan' : undefined} bold={active}>
               {name}
             </Text>
-            <Text> {counts[name]}</Text>
+            <Text
+              dimColor={count === 0}
+              {...(name === 'review' && count > 0 ? {color: 'yellow', bold: true} : {})}
+            >
+              {' '}
+              {count}
+            </Text>
             {index < LISTS.length - 1 ? '  ' : ''}
           </Text>
         );
       })}
       <Box flexGrow={1} />
-      {/* Written the way you would type it, which is also shorter than spelling it out. */}
-      {query.trim().length > 0 && <Text color="cyan">/{query.trim()} </Text>}
-      {showDeferred && <Text dimColor>+deferred </Text>}
-      <Text dimColor>{shown} shown</Text>
+      {screen !== undefined ? (
+        <Text color="cyan">{screen}</Text>
+      ) : (
+        <>
+          {/* Written the way you would type it, which is also shorter than spelling it out. */}
+          {query.trim().length > 0 && <Text color="cyan">/{query.trim()} </Text>}
+          {showDeferred && <Text dimColor>+deferred </Text>}
+          <Text dimColor>{shown} shown</Text>
+        </>
+      )}
       {/* Say so when live updates are off, rather than leaving the screen silently stale. */}
       {!watching && <Text dimColor> · not watching, press r</Text>}
     </Box>

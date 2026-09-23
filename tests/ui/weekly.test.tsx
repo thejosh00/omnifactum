@@ -71,6 +71,47 @@ describe('starting the walk', () => {
     await ui.press('W');
     expect(ui.frame()).toContain('is it actionable?');
   });
+
+  test('the walk\'s keys are in the hint row, in place of the plain list\'s', async () => {
+    seed();
+    const ui = start();
+    await ui.press('W');
+
+    const frame = ui.frame();
+    expect(frame).toContain('n next step');
+    expect(frame).toContain('esc leave');
+    expect(frame).not.toContain('/ filter');
+    // Once, in the hint row, not a second time in the header.
+    expect(frame.split('esc leave').length).toBe(2);
+  });
+
+  test('the status bar names the walk rather than counting a list', async () => {
+    seed();
+    const ui = start();
+    await ui.press('W');
+    expect(ui.frame().split('\n')[0]).toContain('weekly');
+    expect(ui.frame()).not.toContain('shown');
+  });
+
+  test('a cleared step offers nothing to act on', async () => {
+    vault.put('next/draft-memo.md', taskFile({id: '0tq7f2k9cccc', title: 'Draft the memo'}));
+    const ui = start();
+    await ui.press('W');
+
+    expect(ui.frame()).toContain('clear');
+    expect(ui.frame()).not.toContain('x done');
+  });
+
+  test('the project step offers nothing to act on, since it shows no tasks', async () => {
+    seed();
+    const ui = start();
+    await ui.press('W', 'n', 'n', 'n', 'n');
+
+    const frame = ui.frame();
+    expect(frame).toContain('Check every project is moving');
+    expect(frame).not.toContain('x done');
+    expect(frame).not.toContain('0tq7f2k9');
+  });
 });
 
 describe('moving through the steps', () => {
@@ -226,6 +267,6 @@ describe('finishing', () => {
     await ui.press('n', 'n', 'n', 'n', 'n');
 
     expect(ui.frame()).toContain('weekly review 6/6');
-    expect(ui.frame()).toContain('finishes and records');
+    expect(ui.frame()).toContain('n finish and record');
   });
 });

@@ -33,6 +33,15 @@ export interface ListScreenProps {
   showState?: boolean;
 }
 
+/**
+ * The newest readable log entry. For a task in review that is the submission, or a
+ * note someone added since — either way, the last word on it and how old that word is.
+ */
+function lastEntry(file: TaskFile): {actor: string; at: string} | undefined {
+  const entry = file.task.log.findLast(e => e.parsed);
+  return entry === undefined ? undefined : {actor: entry.actor, at: entry.at};
+}
+
 /** The cursor column, its trailing space, and a gap before the annotations. */
 const CHROME = 3;
 const MIN_TITLE = 18;
@@ -61,6 +70,7 @@ export function ListScreen({
           due: file.task.due,
           defer: file.task.defer,
           waitingOn: file.task.waitingOn,
+          submitted: file.task.state === 'review' ? lastEntry(file) : undefined,
         },
         nowIso,
         {dangling: dangling.has(file.task.id), deferred: isDeferred(file.task, nowIso)},
