@@ -1066,3 +1066,26 @@ button.link.meta-project {
 button.link.meta-project:hover {
   text-decoration: underline;
 }
+.tickler-form {
+  margin: 0 0 18px;
+}
+.tickler-form .tickler-title {
+  width: 100%;
+}
+.tickler-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+.tickler-form p {
+  margin: 6px 0 0;
+}
+.tickler-row {
+  cursor: pointer;
+}
+.tickler-editing .tickler-form {
+  margin: 4px 0;
+  width: 100%;
+}

@@ -13,13 +13,13 @@ import type {Database} from 'bun:sqlite';
 import type {Change, ChangeKind} from '../core/diff.ts';
 import type {ProjectState, TaskState} from '../core/types.ts';
 
-export type EventEntity = 'task' | 'project';
+export type EventEntity = 'task' | 'project' | 'tickler';
 
 export interface StoredEvent {
   seq: number;
   accountId: number;
   at: string;
-  /** What changed: a task, or a project. `change.id` is that thing's id. */
+  /** What changed: a task, a project or a tickler item. `change.id` is that thing's id. */
   entity: EventEntity;
   change: Change;
 }
@@ -69,7 +69,7 @@ function toEvent(row: EventRow): StoredEvent {
   if (row.to_state !== null) change.to = row.to_state as TaskState | ProjectState;
   if (row.actor !== null) change.actor = row.actor;
   if (row.note !== null) change.note = row.note;
-  return {seq: row.seq, accountId: row.account_id, at: row.at, entity: row.entity === 'project' ? 'project' : 'task', change};
+  return {seq: row.seq, accountId: row.account_id, at: row.at, entity: row.entity === 'project' || row.entity === 'tickler' ? row.entity : 'task', change};
 }
 
 /** Events after `seq`, oldest first, for a client catching up. */

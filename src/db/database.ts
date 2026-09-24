@@ -127,6 +127,20 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE events ADD COLUMN entity TEXT NOT NULL DEFAULT 'task';
   `,
+  // Tickler items: reminders that come back and turn into next actions.
+  `
+  CREATE TABLE ticklers (
+    account_id    INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    id            TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    schedule      TEXT NOT NULL,
+    next_on       TEXT NOT NULL,
+    last_task_id  TEXT,
+    created       TEXT NOT NULL,
+    version       INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (account_id, id)
+  );
+  `,
 ];
 
 export interface OpenOptions {

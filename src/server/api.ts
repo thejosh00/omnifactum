@@ -33,6 +33,8 @@ import {normalizeTag} from '../core/tags.ts';
 import {isProjectState, isTaskState, taskStateList, TASK_STATES, type Task, type TaskFile, type TaskState} from '../core/types.ts';
 import {agentsDocument} from '../core/agentsDoc.ts';
 import {applyClarify, type ClarifyOutcome} from '../core/clarify.ts';
+import {asSchedule, parseSchedule, ticklerToJson, type Schedule, type TicklerFile} from '../core/recurrence.ts';
+import {createTickler, editTickler, findTickler, sweepRecurring} from '../db/tickler.ts';
 import {
   EXIT_BUSY,
   EXIT_ERROR,
@@ -597,6 +599,84 @@ async function cli(ctx: ApiContext, request: Request): Promise<Response> {
   return json(result);
 }
 
+// --- tickler items ---------------------------------------------------------------
+
+/** A schedule from a request: the text form (`weekly:mon`) or the object form. */
+function scheduleField(ctx: ApiContext, input: Record<string, unknown>): Schedule | undefined {
+  const value = input['schedule'];
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') {
+    const parsed = parseSchedule(value, ctx.now());
+    if (!parsed.ok) throw usage(parsed.error);
+    return parsed.schedule;
+  }
+  const schedule = asSchedule(value);
+  if (schedule === undefined) throw usage('"schedule" must be weekly:<day>, monthly:<1-31>, a date, or {kind, ...}');
+  return schedule;
+}
+
+function requireTickler(store: Store, ref: string): TicklerFile {
+  const found = findTickler(store, ref);
+  if (found === undefined) throw new ApiError(`no tickler item matches "${ref}"`, EXIT_NOT_FOUND, 404);
+  if ('ambiguous' in found) throw usage(`"${ref}" matches more than one tickler item`);
+  return found;
+}
+
+function listTicklersRoute(ctx: ApiContext): Response {
+  const store = storeFor(ctx);
+  sweepRecurring(store, ctx.now());
+  return json({ok: true, ticklers: store.listTicklers().map(ticklerToJson)});
+}
+
+async function createTicklerRoute(ctx: ApiContext, request: Request): Promise<Response> {
+  const input = await body(request);
+  const title = stringField(input, 'title')?.trim() ?? '';
+  if (title.length === 0) throw usage('a tickler item needs a title');
+  const schedule = scheduleField(ctx, input);
+  if (schedule === undefined) throw usage('a tickler item needs a schedule');
+  const store = storeFor(ctx);
+  const file = createTickler(store, title, schedule, ctx.now());
+  // One that was due today has already fired: a repeating one remembers the task it
+  // made, and a one-off is gone.
+  const fired = file.tickler.lastTaskId !== undefined || store.getTickler(file.tickler.id) === undefined;
+  return json(ok({tickler: ticklerToJson(file), fired}), 201);
+}
+
+async function patchTicklerRoute(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
+  const input = await body(request);
+  const version = expectedVersion(request, input);
+  const title = stringField(input, 'title');
+  if (title !== undefined && title.trim().length === 0) throw usage('a tickler item needs a title');
+  const schedule = scheduleField(ctx, input);
+  const store = storeFor(ctx);
+  const current = requireTickler(store, ref);
+  const result = editTickler(
+    store,
+    current.tickler.id,
+    {...(title === undefined ? {} : {title}), ...(schedule === undefined ? {} : {schedule})},
+    ctx.now(),
+    version,
+  );
+  switch (result.kind) {
+    case 'ok':
+      return json(ok({tickler: ticklerToJson(result.file)}));
+    case 'stale':
+      throw new ApiError('someone else changed this tickler item while you were editing it', EXIT_BUSY, 409, {
+        tickler: ticklerToJson(result.file),
+      });
+    default:
+      throw new ApiError('that tickler item is no longer there', EXIT_NOT_FOUND, 404);
+  }
+}
+
+function deleteTicklerRoute(ctx: ApiContext, ref: string): Response {
+  const store = storeFor(ctx);
+  const current = requireTickler(store, ref);
+  const removed = store.removeTickler(current.tickler.id);
+  if (removed.kind !== 'ok') throw new ApiError('that tickler item is no longer there', EXIT_NOT_FOUND, 404);
+  return json(ok({deleted: ticklerToJson(removed.file)}));
+}
+
 /**
  * Route one authenticated API request. Returns undefined when nothing matched, so the
  * caller can answer 404 in the same shape as everything else.
@@ -642,6 +722,15 @@ export async function handleApi(ctx: ApiContext, request: Request, url: URL): Pr
       } else if (method === 'POST') {
         if (action === 'rename') return await renameProjectRoute(ctx, ref, request);
         if (action === 'move') return await moveProjectRoute(ctx, ref, request);
+      }
+    }
+    if (resource === 'ticklers') {
+      if (ref === undefined) {
+        if (method === 'GET') return listTicklersRoute(ctx);
+        if (method === 'POST') return await createTicklerRoute(ctx, request);
+      } else if (action === undefined) {
+        if (method === 'PATCH') return await patchTicklerRoute(ctx, ref, request);
+        if (method === 'DELETE') return deleteTicklerRoute(ctx, ref);
       }
     }
     if (resource === 'weekly') {

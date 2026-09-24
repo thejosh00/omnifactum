@@ -7,6 +7,7 @@
  * the current task attached) from "that was not allowed".
  */
 import type {ClarifyOutcome} from '../core/clarify.ts';
+import type {Schedule} from '../core/recurrence.ts';
 import type {ProjectJson, TaskJson} from '../core/serialize.ts';
 import type {TaskState} from '../core/types.ts';
 
@@ -34,8 +35,8 @@ export interface TaskList {
 export interface ChangeEvent {
   seq: number;
   at: string;
-  /** Whether a task or a project changed. */
-  entity: 'task' | 'project';
+  /** Whether a task, a project or a tickler item changed. */
+  entity: 'task' | 'project' | 'tickler';
   kind: 'completed' | 'added' | 'moved' | 'edited' | 'removed';
   id: string;
   title: string;
@@ -60,6 +61,19 @@ export interface WeeklyPlan {
   days_since_last_review?: number;
   needs_attention: number;
   steps: WeeklyStep[];
+}
+
+export interface TicklerJson {
+  id: string;
+  title: string;
+  schedule: Schedule;
+  schedule_text: string;
+  /** "every Monday", "monthly on the 15th". */
+  description: string;
+  next_on: string;
+  last_task_id?: string;
+  created: string;
+  version: number;
 }
 
 export interface ProjectDetail {
@@ -155,6 +169,16 @@ export const api = {
   moveProject: (ref: string, to: ProjectState, force = false) =>
     call<{project: ProjectJson}>('POST', `/api/projects/${encodeURIComponent(ref)}/move`, {to, force}).then(r => r.project),
   recordWeekly: () => call<{projects_stamped: number; needs_attention: number}>('POST', '/api/weekly/record'),
+
+  ticklers: () => call<{ticklers: TicklerJson[]}>('GET', '/api/ticklers').then(r => r.ticklers),
+  /** `fired` when it was due today and has already put its task in next. */
+  createTickler: (title: string, schedule: Schedule) =>
+    call<{tickler: TicklerJson; fired: boolean}>('POST', '/api/ticklers', {title, schedule}),
+  patchTickler: (id: string, version: number, fields: {title?: string; schedule?: Schedule}) =>
+    call<{tickler: TicklerJson}>('PATCH', `/api/ticklers/${encodeURIComponent(id)}`, fields, {'if-match': String(version)}).then(
+      r => r.tickler,
+    ),
+  removeTickler: (id: string) => call<unknown>('DELETE', `/api/ticklers/${encodeURIComponent(id)}`),
 };
 
 /**

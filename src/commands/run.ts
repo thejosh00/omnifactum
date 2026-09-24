@@ -21,6 +21,7 @@ import {dueCommand, listCommand, LIST_FLAGS} from './list.ts';
 import {showCommand, tagsCommand} from './inspect.ts';
 import {projectCommand, PROJECT_FLAGS} from './project.ts';
 import {submitCommand, SUBMIT_FLAGS} from './submit.ts';
+import {ticklerCommand, TICKLER_FLAGS} from './tickler.ts';
 import {weeklyCommand, WEEKLY_FLAGS} from './weekly.ts';
 import {
   doneCommand,
@@ -88,6 +89,7 @@ const COMMANDS: Record<string, Entry> = {
   tags: {run: tagsCommand, flags: {}, summary: 'every tag in use, with counts'},
   show: {run: showCommand, flags: {}, summary: 'print one task in full'},
   project: {run: projectCommand, flags: PROJECT_FLAGS, summary: 'outcomes that need more than one action'},
+  tickler: {run: ticklerCommand, flags: TICKLER_FLAGS, summary: 'reminders that come back as next actions'},
   agents: {run: agentsCommand, flags: {}, summary: 'print the contract agents read'},
 };
 

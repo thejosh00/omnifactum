@@ -190,6 +190,9 @@ A task in `someday` can carry a `defer` date. When that date arrives the server 
 `next` for you, within a minute. That is why `next` can be read literally: if something
 is in there, it is actionable today.
 
+For things that come back — a bill on the 15th, the recycling every Monday, a renewal next
+March — use the [tickler](#the-tickler).
+
 ## The web app
 
 It is built for the keyboard and works fine without one. Press `?` for the full list —
@@ -315,6 +318,7 @@ Commands run on the server, against the account your token belongs to.
 | `omni tags` | every tag in use, with counts |
 | `omni rm <task> --yes` | delete it permanently |
 | `omni project …` | [projects](#projects) |
+| `omni tickler …` | [the tickler](#the-tickler) |
 | `omni weekly` | [the weekly review](#the-weekly-review) |
 | `omni submit <task> --note "..."` | hand finished work back for review |
 | `omni agents` | print the contract agents read |
@@ -407,6 +411,30 @@ it, or type its next action straight in. A stalled project says so at the top of
 next to the box for the action that would unstall it. Finishing one that still has open
 actions lists them and asks first — the same rule as `omni project done`, which now also
 applies to `omni project mv <project> done`.
+
+## The tickler
+
+A tickler item is a reminder that comes back. It repeats weekly or monthly, or fires once on
+a date. On its day, the server adds a task with its title to `next`, tagged `#tickler`,
+within a minute of local midnight.
+
+```bash
+omni tickler add "Put the recycling out" --every mon
+omni tickler add "Pay the water bill" --monthly 15
+omni tickler add "Renew the passport" --on 2027-03-01
+omni tickler list
+omni tickler rm <id> --yes
+```
+
+- **It does not pile up.** While the task from the last firing is still open, a firing adds
+  nothing. Finish it, and the next firing brings a fresh one.
+- **Missed days count once.** If the server was off for three Mondays, you get one task, not
+  three.
+- **Short months use their last day.** "Monthly on the 31st" fires on Feb 28.
+- **A one-off is deleted once it fires.** Adding one for today, or a past date, fires it
+  straight away.
+
+In the web app, press `T` or click **Tickler** to add, edit and delete them.
 
 ## The weekly review
 

@@ -26,6 +26,7 @@ import {
 import {Clarify} from './Clarify.tsx';
 import {captureSuggest, CompletingInput, tagSuggest, useVocabulary} from './Complete.tsx';
 import {NewProjectDialog, ProjectPanel, ProjectsView} from './Projects.tsx';
+import {TicklerView} from './Ticklers.tsx';
 import {WeeklyBanner} from './Weekly.tsx';
 import {Detail, type DetailActions} from './Detail.tsx';
 import {Confirm, Help, MoveMenu, Prompt, type PromptRequest} from './Dialogs.tsx';
@@ -148,6 +149,8 @@ type Dialog =
   | {kind: 'clarify'; ids: string[]; walking: boolean}
   | {kind: 'new-project'};
 
+type Page = 'lists' | 'projects' | 'tickler';
+
 /** Keys that act on the task list, which mean nothing on the projects page. */
 const TASK_LIST_INTENTS = new Set<Intent>(['down', 'up', 'top', 'bottom', 'open', 'complete', 'move', 'note', 'tags', 'delete', 'clarify']);
 
@@ -264,7 +267,13 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   const [captureFocused, setCaptureFocused] = useState(false);
   const [weekly, setWeekly] = useState<WeeklyPlan>();
   const [walk, setWalk] = useState<{index: number; recorded?: number}>();
-  const [projectsView, setProjectsView] = useState(() => window.location.hash.replace(/^#\/?/, '') === 'projects');
+  // Which page the list pane shows: the task lists, or one of the pages beside them.
+  const [page, setPage] = useState<Page>(() => {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    return hash === 'projects' || hash === 'tickler' ? hash : 'lists';
+  });
+  const projectsView = page === 'projects';
+  const ticklerView = page === 'tickler';
   const [openProject, setOpenProject] = useState<string>();
   const openProjectRef = useRef(openProject);
   openProjectRef.current = openProject;
@@ -279,7 +288,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
     setOpenProject(id);
   }, []);
   const showList = useCallback((state: TaskState) => {
-    setProjectsView(false);
+    setPage('lists');
     setList(state);
   }, []);
   const captureInput = useRef<HTMLInputElement>(null);
@@ -339,9 +348,9 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   }, [reload, toast]);
 
   useEffect(() => {
-    window.location.hash = projectsView ? '/projects' : `/${list}`;
+    window.location.hash = page === 'lists' ? `/${list}` : `/${page}`;
     setCursor(undefined);
-  }, [list, projectsView]);
+  }, [list, page]);
 
   // Changes made elsewhere: refetch, and say what happened if it was not you.
   const reloadRef = useRef(reload);
@@ -356,13 +365,15 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
       (event: ChangeEvent) => {
         soon();
         // A project's panel lists its tasks, so any change may be one it shows.
-        if (event.id === openRef.current || event.entity === 'project' || openProjectRef.current !== undefined) {
+        if (event.id === openRef.current || event.entity !== 'task' || openProjectRef.current !== undefined) {
           setRevision(value => value + 1);
         }
-        if (event.actor !== undefined && event.actor !== session.actor) {
+        // The tickler rescheduling itself is bookkeeping; the task it made is the news.
+        const bookkeeping = event.entity === 'tickler' && event.actor === 'omni';
+        if (event.actor !== undefined && event.actor !== session.actor && !bookkeeping) {
           const change = event as Change;
           const sentence = describeChange(change) + (event.note === undefined ? '' : `: ${event.note}`);
-          toast(event.entity === 'project' ? `Project ${sentence}` : sentence);
+          toast(event.entity === 'project' ? `Project ${sentence}` : event.entity === 'tickler' ? `Tickler item ${sentence}` : sentence);
         }
       },
       soon,
@@ -503,7 +514,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           ...(captured.defer === undefined ? {} : {defer: captured.defer}),
           ...(captured.waitingOn === undefined ? {} : {waiting_on: captured.waitingOn}),
         }),
-      list === state && !projectsView ? undefined : `Captured "${captured.title}" to ${state}`,
+      list === state && page === 'lists' ? undefined : `Captured "${captured.title}" to ${state}`,
     );
   };
 
@@ -513,10 +524,13 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         showList(intent.slice(5) as TaskState);
         return;
       }
-      if (projectsView && open === undefined && TASK_LIST_INTENTS.has(intent)) return;
+      if (page !== 'lists' && open === undefined && TASK_LIST_INTENTS.has(intent)) return;
       switch (intent) {
         case 'projects':
-          setProjectsView(value => !value);
+          setPage(value => (value === 'projects' ? 'lists' : 'projects'));
+          return;
+        case 'tickler':
+          setPage(value => (value === 'tickler' ? 'lists' : 'tickler'));
           return;
         case 'down':
           setCursor(rows[Math.min(rows.length - 1, index + 1)]?.id);
@@ -589,7 +603,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           return;
       }
     },
-    [rows, index, selected, open, openProject, projectsView, query, actions, walk, weekly, stepTo, finishWeekly, openTask, showList],
+    [rows, index, selected, open, openProject, page, query, actions, walk, weekly, stepTo, finishWeekly, openTask, showList],
   );
 
   useEffect(() => {
@@ -683,9 +697,9 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         {TASK_STATES.map((state, position) => (
           <button
             key={state}
-            className={state === list && !showingProjects && !projectsView ? 'tab active' : 'tab'}
+            className={state === list && !showingProjects && page === 'lists' ? 'tab active' : 'tab'}
             onClick={() => showList(state)}
-            aria-current={state === list && !showingProjects && !projectsView ? 'page' : undefined}
+            aria-current={state === list && !showingProjects && page === 'lists' ? 'page' : undefined}
             title={`${LIST_BLURBS[state]} (${position + 1})`}
           >
             {state}
@@ -696,11 +710,19 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         ))}
         <button
           className={projectsView || showingProjects ? 'tab active' : 'tab'}
-          onClick={() => setProjectsView(true)}
+          onClick={() => setPage('projects')}
           aria-current={projectsView ? 'page' : undefined}
           title="Outcomes that take more than one action (p)"
         >
           Projects
+        </button>
+        <button
+          className={ticklerView && !showingProjects ? 'tab active' : 'tab'}
+          onClick={() => setPage('tickler')}
+          aria-current={ticklerView ? 'page' : undefined}
+          title="Things that come back as next actions (T)"
+        >
+          Tickler
         </button>
         {weekly !== undefined && walk === undefined && (
           <button
@@ -736,6 +758,8 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           <ProjectsView now={now} revision={revision} activeOnly onOpen={openProjectPanel} />
         ) : projectsView ? (
           <ProjectsView now={now} revision={revision} onOpen={openProjectPanel} onNew={() => setDialog({kind: 'new-project'})} />
+        ) : ticklerView ? (
+          <TicklerView now={now} revision={revision} toast={toast} onChanged={() => void reload()} />
         ) : (
           <>
         <div className="list-head">

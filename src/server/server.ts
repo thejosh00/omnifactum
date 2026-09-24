@@ -15,7 +15,7 @@ import {checkPin, findAccount, listAccounts} from '../db/database.ts';
 import {EventHub, eventToJson, eventsSince, latestEventSeq} from '../db/events.ts';
 import {dailyBackup} from '../db/backup.ts';
 import {Store} from '../db/store.ts';
-import {sweepTickler} from '../db/tickler.ts';
+import {sweepRecurring, sweepTickler} from '../db/tickler.ts';
 import {errorResponse, handleApi, json} from './api.ts';
 import homepage from '../web/index.html';
 
@@ -194,7 +194,9 @@ export function startServer(options: ServeOptions): RunningServer {
     const sweep = () => {
       for (const account of listAccounts(db)) {
         try {
-          sweepTickler(new Store(db, account, {hub, now}), now());
+          const store = new Store(db, account, {hub, now});
+          sweepTickler(store, now());
+          sweepRecurring(store, now());
         } catch {
           // Busy or otherwise: the next sweep will do it.
         }

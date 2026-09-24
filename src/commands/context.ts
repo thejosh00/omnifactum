@@ -11,7 +11,7 @@
  */
 import {resolveIdPrefix} from '../core/id.ts';
 import {failure, ok, renderJson} from '../core/serialize.ts';
-import {sweepTickler} from '../db/tickler.ts';
+import {sweepRecurring, sweepTickler} from '../db/tickler.ts';
 import type {ParsedArgs} from '../core/args.ts';
 import type {Snapshot} from '../core/snapshot.ts';
 import type {TaskFile} from '../core/types.ts';
@@ -91,10 +91,12 @@ export function emitOk(
  */
 export function runTicklerSweep(ctx: CommandContext, snapshot: Snapshot): Snapshot {
   const promoted = sweepTickler(ctx.store, ctx.now());
-  if (promoted === 0) return snapshot;
+  const created = sweepRecurring(ctx.store, ctx.now());
+  if (promoted === 0 && created === 0) return snapshot;
   // Never on stdout: it would corrupt an agent's parse and surprise a script.
   if (!ctx.json) {
-    ctx.err(`promoted ${promoted} deferred ${promoted === 1 ? 'task' : 'tasks'} to next`);
+    if (promoted > 0) ctx.err(`promoted ${promoted} deferred ${promoted === 1 ? 'task' : 'tasks'} to next`);
+    if (created > 0) ctx.err(`the tickler added ${created} ${created === 1 ? 'task' : 'tasks'} to next`);
   }
   return ctx.store.load();
 }

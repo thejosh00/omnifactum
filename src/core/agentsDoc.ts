@@ -148,6 +148,7 @@ omni show fix-printer-driver
 | \`omni tags --json\` | every tag in use, with counts |
 | \`omni due --json\` | deadlines, soonest first |
 | \`omni project list --json\` | projects, with a \`stalled\` flag |
+| \`omni tickler list --json\` | tickler items: reminders that come back as next actions |
 
 Every command takes \`--json\`.
 
@@ -220,6 +221,18 @@ a person. Do not invent the next step yourself.
 
 Link a task to a project with \`-p <stem>\` when adding it.
 
+## The tickler
+
+A tickler item fires weekly, monthly or once on a date, and each firing adds a task to
+\`next\` tagged \`#tickler\`. While the task from the last firing is still open, a firing
+adds nothing. To ask for a reminder:
+
+\`\`\`bash
+omni tickler add "Pay the water bill" --monthly 15 --json
+omni tickler add "Check the smoke alarms" --every sat --json
+omni tickler add "Renew the passport" --on 2027-03-01 --json
+\`\`\`
+
 ## What not to do
 
 **Do not accept your own work.** \`omni submit\` is how you finish; \`omni done\` is for
@@ -249,6 +262,7 @@ as above.
 | \`POST /api/tasks/<task>/tags\` \`{"add", "remove"}\` | change tags |
 | \`PATCH /api/tasks/<task>\` with \`If-Match: <version>\` | replace title, body or dates |
 | \`GET /api/projects\` | projects |
+| \`GET /api/ticklers\`, \`POST /api/ticklers\` \`{"title", "schedule"}\` | tickler items; \`schedule\` is \`weekly:mon\`, \`monthly:15\` or a date |
 | \`GET /api/agents\` | this document |
 
 A \`PATCH\` replaces what is there, so it carries the task's \`version\` from when you read

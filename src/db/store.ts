@@ -18,6 +18,7 @@ import {changeBetween, type Change} from '../core/diff.ts';
 import {mintId} from '../core/id.ts';
 import {formatLogEntry} from '../core/log.ts';
 import {ACTOR_USER} from '../core/mutation.ts';
+import {asSchedule, type Tickler, type TicklerFile} from '../core/recurrence.ts';
 import {buildSnapshot, type Snapshot} from '../core/snapshot.ts';
 import {isAppAuthoredStem, stemFor, uniqueStem} from '../core/slug.ts';
 import {nowIso} from '../core/time.ts';
@@ -176,6 +177,25 @@ function rowToProject(row: ProjectRow, log: LogEntry[]): ProjectFile {
   if (row.reviewed !== null) project.reviewed = row.reviewed;
   if (row.done !== null) project.done = row.done;
   return {project, stem: row.stem, version: row.version};
+}
+
+interface TicklerRow {
+  id: string;
+  title: string;
+  schedule: string;
+  next_on: string;
+  last_task_id: string | null;
+  created: string;
+  version: number;
+}
+
+function rowToTickler(row: TicklerRow): TicklerFile {
+  // A schedule the app wrote is always readable; a damaged one fires weekly on Sunday
+  // rather than taking the whole list down with it.
+  const schedule = asSchedule(JSON.parse(row.schedule)) ?? {kind: 'weekly', weekday: 0};
+  const tickler: Tickler = {id: row.id, title: row.title, schedule, nextOn: row.next_on, created: row.created};
+  if (row.last_task_id !== null) tickler.lastTaskId = row.last_task_id;
+  return {tickler, version: row.version};
 }
 
 export class Store {
@@ -598,6 +618,76 @@ export class Store {
       this.writeProjectLog(next);
       this.recordProject(current.project, next);
       return {kind: 'ok', file: {project: next, stem, version: current.version + 1}} as const;
+    });
+  }
+
+  // --- tickler items -------------------------------------------------------------
+
+  listTicklers(): TicklerFile[] {
+    const rows = this.db
+      .query('SELECT * FROM ticklers WHERE account_id = ? ORDER BY next_on, title')
+      .all(this.account.id) as TicklerRow[];
+    return rows.map(rowToTickler);
+  }
+
+  getTickler(id: string): TicklerFile | undefined {
+    const row = this.db
+      .query('SELECT * FROM ticklers WHERE account_id = ? AND id = ?')
+      .get(this.account.id, id) as TicklerRow | null;
+    return row === null ? undefined : rowToTickler(row);
+  }
+
+  private recordTickler(kind: Change['kind'], tickler: Tickler): void {
+    this.announce({kind, id: tickler.id, title: tickler.title, actor: this.actor}, 'tickler');
+  }
+
+  createTickler(tickler: Tickler): TicklerFile {
+    return this.batch(() => {
+      this.db
+        .query(
+          `INSERT INTO ticklers (account_id, id, title, schedule, next_on, last_task_id, created, version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        )
+        .run(
+          this.account.id,
+          tickler.id,
+          tickler.title,
+          JSON.stringify(tickler.schedule),
+          tickler.nextOn,
+          tickler.lastTaskId ?? null,
+          tickler.created,
+        );
+      this.recordTickler('added', tickler);
+      return {tickler, version: 1};
+    });
+  }
+
+  updateTickler(id: string, plan: (tickler: Tickler) => Tickler, options: UpdateOptions = {}): Updated<TicklerFile> {
+    return this.batch(() => {
+      const current = this.getTickler(id);
+      if (current === undefined) return {kind: 'not-found'} as const;
+      if (options.expectVersion !== undefined && options.expectVersion !== current.version) {
+        return {kind: 'stale', file: current} as const;
+      }
+      const next = plan(current.tickler);
+      this.db
+        .query(
+          `UPDATE ticklers SET title = ?, schedule = ?, next_on = ?, last_task_id = ?, version = version + 1
+           WHERE account_id = ? AND id = ?`,
+        )
+        .run(next.title, JSON.stringify(next.schedule), next.nextOn, next.lastTaskId ?? null, this.account.id, id);
+      this.recordTickler('edited', next);
+      return {kind: 'ok', file: {tickler: next, version: current.version + 1}} as const;
+    });
+  }
+
+  removeTickler(id: string): Updated<TicklerFile> {
+    return this.batch(() => {
+      const current = this.getTickler(id);
+      if (current === undefined) return {kind: 'not-found'} as const;
+      this.db.query('DELETE FROM ticklers WHERE account_id = ? AND id = ?').run(this.account.id, id);
+      this.recordTickler('removed', current.tickler);
+      return {kind: 'ok', file: current} as const;
     });
   }
 

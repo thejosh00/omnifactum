@@ -20,6 +20,7 @@ export type Intent =
   | 'move'
   | 'clarify'
   | 'projects'
+  | 'tickler'
   | 'weekly'
   | 'step-next'
   | 'step-back'
@@ -51,6 +52,7 @@ export const BINDINGS: Binding[] = [
   {keys: ['X'], label: 'delete permanently', intent: 'delete', group: 'Acting'},
   {keys: ['/'], label: 'filter by tag or text', intent: 'filter', group: 'Lists'},
   {keys: ['p'], label: 'projects', intent: 'projects', group: 'Lists'},
+  {keys: ['T'], label: 'tickler', intent: 'tickler', group: 'Lists'},
   {keys: ['W'], label: 'start or leave the weekly review', intent: 'weekly', group: 'Lists'},
   {keys: ['n'], label: 'next step of the review', intent: 'step-next', group: 'Lists'},
   {keys: ['b'], label: 'previous step of the review', intent: 'step-back', group: 'Lists'},
