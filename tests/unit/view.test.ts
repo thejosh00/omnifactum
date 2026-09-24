@@ -32,11 +32,8 @@ function file(
       repairs: [],
       ...(extra.defer === undefined ? {} : {defer: extra.defer}),
     },
-    path: `/${state}/${id}.md`,
     stem: id,
-    mtimeMs: 0,
-    size: 0,
-    raw: '',
+    version: 1,
   };
 }
 

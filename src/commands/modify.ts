@@ -12,7 +12,7 @@ import {shortId} from '../core/render.ts';
 import {taskToJson} from '../core/serialize.ts';
 import {normalizeTag} from '../core/tags.ts';
 import {isTaskState, taskStateChoices} from '../core/types.ts';
-import type {Updated} from '../store/store.ts';
+import type {Updated} from '../db/store.ts';
 import type {TaskFile} from '../core/types.ts';
 import {
   EXIT_BUSY,
@@ -28,7 +28,7 @@ import {
   type Command,
   type CommandContext,
 } from './context.ts';
-import {LockTimeoutError} from '../store/lock.ts';
+import {isBusy} from '../db/busy.ts';
 
 export const DONE_FLAGS = {boolean: ['force'], alias: {n: 'note', m: 'note', a: 'actor'}} as const;
 export const RM_FLAGS = {boolean: ['force', 'yes'], alias: {f: 'force', y: 'yes'}} as const;
@@ -46,10 +46,13 @@ function settle(
     case 'ok':
       return emitOk(ctx, {task: taskToJson(result.file)}, () => human(result.file));
     case 'not-found':
-      // Between resolving the reference and taking the lock, someone else finished it.
+      // Resolved and changed in one transaction, so this only happens if it was deleted.
       return fail(ctx, 'that task is no longer there; something else changed it first', EXIT_NOT_FOUND);
     case 'failed':
       return fail(ctx, result.reason, EXIT_ERROR);
+    case 'stale':
+      // Commands plan against the current row, so they never ask for a version check.
+      return fail(ctx, 'that task changed while this was being written; try again', EXIT_BUSY);
   }
 }
 
@@ -58,8 +61,8 @@ export function runWrite(ctx: CommandContext, action: () => number): number {
   try {
     return action();
   } catch (error) {
-    if (error instanceof LockTimeoutError) {
-      return fail(ctx, error.message, EXIT_BUSY);
+    if (isBusy(error)) {
+      return fail(ctx, 'another writer held the database for too long; try again', EXIT_BUSY);
     }
     throw error;
   }

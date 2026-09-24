@@ -161,11 +161,8 @@ describe('the project reference cascade', () => {
         repairs: [],
         ...rest,
       },
-      path: `/projects/active/${stem}.md`,
       stem,
-      mtimeMs: 0,
-      size: 0,
-      raw: '',
+      version: 1,
     };
   }
 

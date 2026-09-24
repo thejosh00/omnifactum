@@ -29,11 +29,8 @@ function task(
       ...(extra.due === undefined ? {} : {due: extra.due}),
       ...(extra.asked === undefined ? {} : {asked: extra.asked}),
     },
-    path: `/${state}/${id}.md`,
     stem: id,
-    mtimeMs: 0,
-    size: 0,
-    raw: '',
+    version: 1,
   };
 }
 
@@ -51,11 +48,8 @@ function project(stem: string, options: {outcome?: string} = {}): ProjectFile {
       log: [],
       repairs: [],
     },
-    path: `/projects/active/${stem}.md`,
     stem,
-    mtimeMs: 0,
-    size: 0,
-    raw: '',
+    version: 1,
   };
 }
 

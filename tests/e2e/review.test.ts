@@ -25,7 +25,6 @@ afterEach(() => {
 
 async function seeded(): Promise<Vault> {
   const v = openVault();
-  await omni(['init'], {dir: v.dir, now: NOW});
   await omni(['add', 'Fix printer driver', '-t', 'agent', '--next'], {dir: v.dir, now: NOW});
   return v;
 }
@@ -187,7 +186,6 @@ describe('a person reviews the work', () => {
 describe('review and the rest of the system', () => {
   test('a project whose only action is in review is not stalled', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['project', 'new', 'Kitchen', '--outcome', 'Finished'], {dir: v.dir, now: NOW});
     await omni(['add', 'Order tiles', '-p', 'kitchen', '--next'], {dir: v.dir, now: NOW});
 
@@ -204,12 +202,4 @@ describe('review and the rest of the system', () => {
     expect(v.list()).toEqual(['review/fix-printer-driver.md']);
   });
 
-  test('doctor is happy with a task in review', async () => {
-    const v = await seeded();
-    await asAgent(v, ['submit', 'fix-printer-driver', '--note', 'done']);
-
-    const result = await omni(['doctor'], {dir: v.dir, now: NOW});
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('Everything looks fine');
-  });
 });

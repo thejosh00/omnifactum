@@ -3,8 +3,6 @@
  * link rewriting, and complete.
  */
 import {afterEach, describe, expect, test} from 'bun:test';
-import {renameSync} from 'node:fs';
-import {join} from 'node:path';
 import {makeVault, type Vault} from '../helpers/vault.ts';
 import {omni} from '../helpers/cli.ts';
 
@@ -23,7 +21,6 @@ afterEach(() => {
 
 async function withProject(): Promise<Vault> {
   const v = openVault();
-  await omni(['init'], {dir: v.dir, now: NOW});
   await omni(
     ['project', 'new', 'Renovate the kitchen', '--outcome', 'New kitchen finished and paid for'],
     {dir: v.dir, now: NOW},
@@ -44,7 +41,6 @@ describe('creating a project', () => {
 
   test('refuses without an outcome, because that is the point of a project', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
 
     const result = await omni(['project', 'new', 'Vague ambition'], {dir: v.dir, now: NOW});
     expect(result.code).not.toBe(0);
@@ -136,12 +132,6 @@ describe('the stalled check, which is what a tag could never do', () => {
     );
   });
 
-  test('doctor reports the stall and says what to do about it', async () => {
-    const v = await withProject();
-    const result = await omni(['doctor'], {dir: v.dir, now: NOW});
-    expect(result.stdout).toContain('nothing in next or waiting');
-    expect(result.stdout).toContain('omni add');
-  });
 });
 
 describe('renaming rewrites the links', () => {
@@ -172,53 +162,18 @@ describe('renaming rewrites the links', () => {
     const v = await withProject();
     await omni(['project', 'rename', 'renovate-the-kitchen', 'Kitchen refit'], {dir: v.dir, now: NOW});
 
-    // A task written by an agent that had not seen the rename yet, so it still uses
-    // the project's previous stem.
-    v.put(
-      'next/late-arrival.md',
-      '---\nid: 0tq7f2k9aaaa\ntitle: Late arrival\ncreated: 2026-09-12T11:03:00Z\nproject: renovate-the-kitchen\n---\n',
-    );
+    // An agent that had not seen the rename yet, so it still uses the previous stem.
+    const added = await omni(['add', 'Late arrival', '-p', 'renovate-the-kitchen', '--next'], {
+      dir: v.dir,
+      now: NOW,
+    });
+    expect(added.stderr).toBe('');
 
     const listed = await omni(['project', 'show', 'kitchen-refit'], {dir: v.dir, now: NOW});
     expect(listed.stdout).toContain('Late arrival');
 
-    const doctor = await omni(['doctor'], {dir: v.dir, now: NOW});
-    expect(doctor.stdout).not.toContain('does not exist');
-  });
-});
-
-describe('a hand-rename, which is the sharp edge of a readable link', () => {
-  test('is caught by the title step of the cascade', async () => {
-    const v = await withProject();
-    await omni(['add', 'Order the tiles', '-p', 'renovate-the-kitchen', '--next'], {dir: v.dir, now: NOW});
-
-    renameSync(
-      join(v.dir, 'projects', 'active', 'renovate-the-kitchen.md'),
-      join(v.dir, 'projects', 'active', 'kitchen-2026-FINAL.md'),
-    );
-
-    // The stem no longer matches, but the slug of the title still does.
-    const shown = await omni(['project', 'show', 'kitchen-2026-FINAL'], {dir: v.dir, now: NOW});
-    expect(shown.stdout).toContain('Order the tiles');
-  });
-
-  test('a rename that defeats the cascade is reported, not silent', async () => {
-    const v = await withProject();
-    await omni(['add', 'Order the tiles', '-p', 'renovate-the-kitchen', '--next'], {dir: v.dir, now: NOW});
-
-    // Renaming the file *and* the title leaves nothing to match on.
-    v.put(
-      'projects/active/unrecognisable.md',
-      '---\nid: 0tq7g0a2cdef\ntitle: Something else entirely\noutcome: Done\ncreated: 2026-09-01T09:00:00Z\n---\n',
-    );
-    renameSync(
-      join(v.dir, 'projects', 'active', 'renovate-the-kitchen.md'),
-      join(v.dir, 'projects', 'active', 'renovate-the-kitchen.md.bak'),
-    );
-
-    const doctor = await omni(['doctor'], {dir: v.dir, now: NOW});
-    expect(doctor.stdout).toContain('project "renovate-the-kitchen" does not exist');
-    expect(doctor.stdout).toContain('repoint');
+    const orphans = await omni(['project', 'list', '--json'], {dir: v.dir, now: NOW});
+    expect(orphans.stdout).not.toContain('does not exist');
   });
 });
 
@@ -270,46 +225,3 @@ describe('completing a project', () => {
   });
 });
 
-describe('projects an agent wrote by hand', () => {
-  test('a project file with no frontmatter is still a project', async () => {
-    const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
-    v.put('projects/active/build-the-shed.md', 'A shed, at the bottom of the garden.\n');
-
-    const listed = await omni(['project', 'list'], {dir: v.dir, now: NOW});
-    expect(listed.stdout).toContain('build-the-shed');
-    expect(listed.stdout).toContain('no outcome');
-  });
-
-  test('doctor heals the fields but never invents an outcome', async () => {
-    const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
-    v.put('projects/active/build-the-shed.md', 'A shed.\n');
-
-    await omni(['doctor', '--fix'], {dir: v.dir, now: NOW});
-    const healed = v.read('projects/active/build-the-shed.md');
-    expect(healed).toContain('id:');
-    expect(healed).toContain('title: Build the shed');
-    expect(healed).not.toContain('outcome:');
-
-    const doctor = await omni(['doctor'], {dir: v.dir, now: NOW});
-    expect(doctor.stdout).toContain('no outcome statement');
-    expect(doctor.stdout).toContain('omni project outcome');
-  });
-
-  test('and the outcome can then be supplied', async () => {
-    const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
-    v.put('projects/active/build-the-shed.md', 'A shed.\n');
-    await omni(['doctor', '--fix'], {dir: v.dir, now: NOW});
-
-    const result = await omni(
-      ['project', 'outcome', 'build-the-shed', 'Shed built, tools moved in'],
-      {dir: v.dir, now: NOW},
-    );
-    expect(result.code).toBe(0);
-    expect(v.read('projects/active/build-the-shed.md')).toContain(
-      'outcome: Shed built, tools moved in',
-    );
-  });
-});

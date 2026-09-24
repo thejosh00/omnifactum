@@ -34,7 +34,6 @@ afterEach(() => {
 /** One task parked in each state, so a filter that returns the wrong list is visible. */
 async function oneOfEach(): Promise<Vault> {
   const v = openVault();
-  await omni(['init'], {dir: v.dir, now: NOW});
   for (const state of TASK_STATES) {
     await omni(['add', `A task in ${state}`, '-s', state], {dir: v.dir, now: NOW});
   }
@@ -86,7 +85,6 @@ describe('the per-state shorthands', () => {
 describe('what the app tells you the states are', () => {
   test('the error from add names every one', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
 
     const result = await omni(['add', 'Something', '-s', 'nonsense'], {dir: v.dir, now: NOW});
     expect(result.code).toBe(EXIT_USAGE);
@@ -95,21 +93,18 @@ describe('what the app tells you the states are', () => {
 
   test('the usage line from mv names every one', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
 
     const result = await omni(['mv', 'whatever'], {dir: v.dir, now: NOW});
     expect(result.code).toBe(EXIT_USAGE);
     for (const state of TASK_STATES) expect(result.stderr).toContain(state);
   });
 
-  test('AGENTS.md names every one, in the table and in the file layout', () => {
+  test('the agent contract names every one in its command table', () => {
     const doc = agentsDocument();
     const table = doc.slice(doc.indexOf('## The commands'), doc.indexOf('## Exit codes'));
 
     for (const state of TASK_STATES) {
       expect({state, inTable: table.includes(state)}).toEqual({state, inTable: true});
-      const directory = state === 'done' ? '`done/YYYY-MM/`' : `\`${state}/\``;
-      expect({state, inLayout: doc.includes(directory)}).toEqual({state, inLayout: true});
     }
   });
 

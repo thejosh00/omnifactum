@@ -1,25 +1,42 @@
 /**
- * A throwaway data directory for tests.
+ * A throwaway data directory for tests, holding the database.
  *
- * Every level of the suite points the app at one of these through `OMNI_DIR`, which
- * is read in exactly one place, `src/config.ts`. Nothing else in the codebase calls
- * `os.homedir()`, so a test can never reach the real `~/.omnifactum`.
+ * Tasks used to be files, and many tests say what should happen in those terms:
+ * "completing it files it under done/2026-09/", "the log reads **you** — ...". Those
+ * rules still hold, so `list`, `read` and `exists` show the work account's database as
+ * the vault it would have been — `<state dir>/<stem>.md`, rendered as markdown — rather
+ * than every test being rewritten to say the same thing another way.
+ *
+ * `put` still writes a real file, for the tests that build a vault to import.
  */
-import {mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {baseDirectories} from '../../src/core/state.ts';
+import {closeDatabase, storeFor} from './cli.ts';
+import {projectDir, taskDir} from '../../src/core/state.ts';
+import {writeTask} from '../../src/core/task.ts';
+import {writeProject} from '../../src/core/project.ts';
+
+/** The work account as a map of old-style relative paths to rendered markdown. */
+function virtualFiles(dir: string): Map<string, string> {
+  const snapshot = storeFor({dir}).load();
+  const files = new Map<string, string>();
+  for (const file of snapshot.tasks) {
+    files.set(`${taskDir(file.task.state, file.task.done)}/${file.stem}.md`, writeTask(file.task, ''));
+  }
+  for (const file of snapshot.projects) {
+    files.set(`${projectDir(file.project.state, file.project.done)}/${file.stem}.md`, writeProject(file.project, ''));
+  }
+  return files;
+}
 
 export interface Vault {
   dir: string;
-  /** Write a file into the vault at a path relative to its root. */
+  /** Write a real file at a path relative to the directory, for import tests. */
   put(relativePath: string, content: string): string;
   read(relativePath: string): string;
-  /**
-   * Every markdown file that could be a task, relative to the vault root, sorted.
-   * Files at the root are excluded: a task always lives inside a state directory, so
-   * `AGENTS.md` and `REVIEW.md` are documents, never tasks.
-   */
+  /** Every task and project, as the path its file would have had, sorted. */
   list(): string[];
   exists(relativePath: string): boolean;
   cleanup(): void;
@@ -43,38 +60,21 @@ export function makeVault(options: {layout?: boolean} = {}): Vault {
       return path;
     },
     read(relativePath) {
-      return readFileSync(join(dir, relativePath), 'utf8');
+      const content = virtualFiles(dir).get(relativePath);
+      if (content === undefined) throw new Error(`no task or project at ${relativePath}`);
+      return content;
     },
     list() {
-      return walk(dir, dir)
-        .filter(relativePath => relativePath.includes('/'))
-        .sort();
+      return [...virtualFiles(dir).keys()].sort();
     },
     exists(relativePath) {
-      try {
-        readFileSync(join(dir, relativePath));
-        return true;
-      } catch {
-        return false;
-      }
+      return virtualFiles(dir).has(relativePath);
     },
     cleanup() {
+      closeDatabase(dir);
       rmSync(dir, {recursive: true, force: true});
     },
   };
-}
-
-function walk(root: string, current: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(current, {withFileTypes: true})) {
-    const path = join(current, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...walk(root, path));
-    } else if (entry.name.endsWith('.md')) {
-      out.push(path.slice(root.length + 1));
-    }
-  }
-  return out;
 }
 
 /** A minimal, valid task file. */

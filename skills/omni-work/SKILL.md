@@ -16,14 +16,24 @@ omni --version || ~/.bun/bin/omni --version
 
 If the bare command is not found but `~/.bun/bin/omni` runs, use that path for every
 command below. (`bun link` installs there, and Homebrew's Bun does not add it to PATH.)
-If neither runs, stop and say so — do not edit files under `~/.omnifactum` by hand to
-work around it.
+If neither runs, stop and say so.
 
-Identify yourself once, so every log line records who did the work:
+The tasks live behind a server, and `omni` needs a token to reach them. Check you have
+one that is yours:
 
 ```bash
-export OMNI_ACTOR="agent:claude-code"
+omni tags --json
 ```
+
+- Exit code `2` mentioning a token: there is none. **Stop and ask** the person to run
+  `omni account token <work|home> agent:claude-code` and give you the result as
+  `OMNI_TOKEN`. Do not borrow theirs — a person's token records your work as theirs and
+  lets you accept your own work.
+- Exit code `4`: the server is not running or not reachable at `OMNI_URL`. Say so and
+  stop; do not try to start it or work around it.
+
+The token decides which account's lists you see and records you as its `agent:` name in
+every log line, so there is nothing to set for identity.
 
 Read the contract if you have not in this session — it is short, and it is generated from
 the code so it cannot be out of date:
@@ -133,19 +143,17 @@ is reported rather than silently overwritten. Re-read it and decide again.
 
 ## Rules
 
-- **Never `omni done`.** It is refused for an `agent:` actor anyway. Submitting is how you
+- **Never `omni done`.** It is refused for an agent's token anyway. Submitting is how you
   finish; accepting is the person's call, and that is the point of the queue rather than
   an obstacle to route around.
 - **Never `omni rm`.** There is no trash and no undo. If something looks wrong, move it to
   `someday` or leave a note for a person.
-- **Never write files under the data directory directly.** Every `omni` write takes a lock
-  and re-reads the task inside it, so your change applies to whatever the task has become.
-  Editing the markdown yourself bypasses that and can destroy someone's edit.
+- **Never touch the database directly.** Every `omni` command applies your change to the
+  task as it is at that moment, inside one transaction, so a person's edit in the web app
+  and yours cannot overwrite each other. Going around it gives that up.
 - **Give commands your change, not a finished result.** `omni tag <id> +needs-review` adds
   to whatever tags exist right then. Reading a task, editing its tag list yourself, and
   writing the whole thing back would discard anything added in between.
-- **Do not rename anything in `projects/`.** Tasks point at their project by filename; use
-  `omni project rename`.
 
 ## Finishing up
 

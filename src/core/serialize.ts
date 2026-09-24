@@ -4,12 +4,11 @@
  * This is an API contract now, not a convenience, so it is defined in one pure place
  * and asserted directly in tests. Two rules keep it predictable:
  *
- * Field names match the frontmatter exactly, including `waiting_on`, so an agent that
- * has looked at a file and an agent that has only ever called the CLI are talking about
- * the same thing by the same name.
+ * Field names are snake_case, including `waiting_on`, and have not changed since tasks
+ * were markdown files, so an agent written against the old contract still reads them.
  *
  * Absent means absent. An optional field that is not set is left out rather than
- * emitted as null, which is what the files do too.
+ * emitted as null.
  */
 import type {LogEntry, ProjectFile, TaskFile} from './types.ts';
 
@@ -33,10 +32,13 @@ export interface TaskJson {
   done?: string;
   body: string;
   log: LogEntryJson[];
-  /** Absolute path, so an agent can read or diff the file directly if it wants to. */
-  path: string;
-  /** The filename stem, which is also a valid reference to this task. */
+  /** A short name derived from the title, which is also a valid reference to this task. */
   stem: string;
+  /**
+   * Goes up by one on every change. Send it back as `If-Match` when replacing a field
+   * over HTTP, and the write is refused if someone else changed the task first.
+   */
+  version: number;
 }
 
 export interface ProjectJson {
@@ -53,8 +55,8 @@ export interface ProjectJson {
   /** Tasks in next or waiting. Zero on an active project means it is stalled. */
   live_actions: number;
   stalled: boolean;
-  path: string;
   stem: string;
+  version: number;
 }
 
 function logToJson(log: readonly LogEntry[]): LogEntryJson[] {
@@ -90,8 +92,8 @@ export function taskToJson(file: TaskFile): TaskJson {
     done: task.done,
     body: task.body.trim(),
     log: logToJson(task.log),
-    path: file.path,
     stem: file.stem,
+    version: file.version,
   });
 }
 
@@ -115,8 +117,8 @@ export function projectToJson(file: ProjectFile, context: ProjectContext): Proje
     aliases: project.aliases,
     live_actions: context.liveActions,
     stalled: context.stalled,
-    path: file.path,
     stem: file.stem,
+    version: file.version,
   });
 }
 

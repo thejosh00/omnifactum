@@ -62,7 +62,8 @@ export const submitCommand: Command = ctx => {
         case 'not-found':
           return fail(ctx, 'that task is no longer there', EXIT_NOT_FOUND);
         case 'failed':
-          return fail(ctx, result.reason, EXIT_ERROR);
+        case 'stale':
+          return fail(ctx, result.kind === 'failed' ? result.reason : 'the task changed; try again', EXIT_ERROR);
         case 'ok':
           return emitOk(
             ctx,

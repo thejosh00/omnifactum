@@ -10,10 +10,8 @@
  * does.
  */
 import {afterEach, describe, expect, test} from 'bun:test';
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
 import {agentsDocument} from '../../src/core/agentsDoc.ts';
-import {COMMAND_ALIASES, COMMAND_NAMES} from '../../src/cli.ts';
+import {COMMAND_ALIASES, COMMAND_NAMES, LOCAL_COMMAND_NAMES} from '../../src/cli.ts';
 import {
   EXIT_BUSY,
   EXIT_ERROR,
@@ -22,10 +20,8 @@ import {
   EXIT_USAGE,
 } from '../../src/commands/context.ts';
 import {isValidTag} from '../../src/core/tags.ts';
-import {readTask} from '../../src/core/task.ts';
-import {baseDirectories} from '../../src/core/state.ts';
 import {makeVault, type Vault} from '../helpers/vault.ts';
-import {omni} from '../helpers/cli.ts';
+import {omni, serveFor} from '../helpers/cli.ts';
 
 const NOW = '2026-09-12T11:03:00Z';
 const DOC = agentsDocument();
@@ -56,7 +52,7 @@ function citedCommands(): string[] {
 
 describe('the commands it cites', () => {
   test('all of them exist', () => {
-    const known = new Set([...COMMAND_NAMES, ...Object.keys(COMMAND_ALIASES), 'help']);
+    const known = new Set([...COMMAND_NAMES, ...Object.keys(COMMAND_ALIASES), ...LOCAL_COMMAND_NAMES, 'help']);
     const cited = [...new Set(citedCommands())];
     expect(cited.length).toBeGreaterThan(8);
     for (const name of cited) {
@@ -66,10 +62,9 @@ describe('the commands it cites', () => {
 
   test('the ones in the command table run without erroring', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Something', '-t', 'agent', '--next'], {dir: v.dir, now: NOW});
 
-    for (const args of [['list'], ['inbox'], ['next'], ['waiting'], ['someday'], ['tags'], ['due'], ['doctor']]) {
+    for (const args of [['list'], ['inbox'], ['next'], ['waiting'], ['someday'], ['review'], ['tags'], ['due'], ['project', 'list']]) {
       const result = await omni([...args, '--json'], {dir: v.dir, now: NOW});
       expect({args, code: result.code}).toEqual({args, code: 0});
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -85,13 +80,11 @@ describe('the exit codes it documents', () => {
 
   test('an unknown task really does exit 3, as claimed', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     expect((await omni(['show', 'nope', '--json'], {dir: v.dir, now: NOW})).code).toBe(EXIT_NOT_FOUND);
   });
 
   test('a bad command really does exit 2, as claimed', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     expect((await omni(['mv', 'x', 'nowhere', '--json'], {dir: v.dir, now: NOW})).code).toBe(EXIT_USAGE);
   });
 });
@@ -99,7 +92,6 @@ describe('the exit codes it documents', () => {
 describe('the JSON it shows', () => {
   test('a listed task really has every field the example shows', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '-t', 'home,agent', '--next'], {dir: v.dir, now: NOW});
 
     const example = codeBlocks('json').find(block => block.trimStart().startsWith('['));
@@ -119,7 +111,6 @@ describe('the JSON it shows', () => {
 
   test('a completion really returns the envelope the example shows', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '--next'], {dir: v.dir, now: NOW});
 
     const example = codeBlocks('json').find(block => block.includes('"ok": true'));
@@ -140,7 +131,6 @@ describe('the JSON it shows', () => {
 
   test('a failure really is an envelope on stdout with stderr empty, as claimed', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
 
     const example = codeBlocks('json').find(block => block.includes('"ok": false'));
     expect(example).toBeDefined();
@@ -159,7 +149,6 @@ describe('the JSON it shows', () => {
 describe('the procedures it gives', () => {
   test('finding tagged work returns only the tagged work', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'For the agent', '-t', 'agent', '--next'], {dir: v.dir, now: NOW});
     await omni(['add', 'For me', '-t', 'personal', '--next'], {dir: v.dir, now: NOW});
 
@@ -172,7 +161,6 @@ describe('the procedures it gives', () => {
 
   test('all three ways of referring to a task work, as claimed', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '--next'], {dir: v.dir, now: NOW});
 
     const id = (
@@ -186,7 +174,6 @@ describe('the procedures it gives', () => {
 
   test('reporting a blocked task the way it suggests works', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Blocked thing', '-t', 'agent', '--next'], {dir: v.dir, now: NOW});
 
     expect((await omni(['mv', 'blocked-thing', 'waiting', '--json'], {dir: v.dir, now: NOW})).code).toBe(0);
@@ -196,7 +183,6 @@ describe('the procedures it gives', () => {
 
   test('a deferred task is invisible to the agent list, as claimed', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Not yet', '-t', 'agent', '-s', 'someday', '--defer', '2027-01-01'], {
       dir: v.dir,
       now: NOW,
@@ -210,7 +196,6 @@ describe('the procedures it gives', () => {
 
   test('a project really carries the stalled flag it describes', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['project', 'new', 'Kitchen', '--outcome', 'Finished'], {dir: v.dir, now: NOW});
 
     const [project] = JSON.parse(
@@ -221,7 +206,6 @@ describe('the procedures it gives', () => {
 
   test('rm really does require --yes, as claimed', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Precious'], {dir: v.dir, now: NOW});
 
     expect((await omni(['rm', 'precious', '--json'], {dir: v.dir, now: NOW})).code).not.toBe(0);
@@ -232,7 +216,6 @@ describe('the procedures it gives', () => {
 describe('the review rule it states', () => {
   test('the submit procedure it documents actually works', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '-t', 'agent', '--next'], {dir: v.dir, now: NOW});
 
     const result = await omni(
@@ -249,7 +232,6 @@ describe('the review rule it states', () => {
 
   test('and the refusal is real, not just documented', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '--next'], {dir: v.dir, now: NOW});
 
     const refused = await omni(
@@ -262,7 +244,6 @@ describe('the review rule it states', () => {
 
   test('the note it says is required really is required', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '--next'], {dir: v.dir, now: NOW});
 
     expect(DOC).toContain('`--note` is required');
@@ -275,7 +256,6 @@ describe('the review rule it states', () => {
 
   test('the rejection path it describes carries a reason', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Fix printer driver', '--next'], {dir: v.dir, now: NOW});
     await omni(['submit', 'fix-printer-driver', '--note', 'did it', '--actor', 'agent:test'], {
       dir: v.dir,
@@ -291,31 +271,99 @@ describe('the review rule it states', () => {
   });
 });
 
-describe('the raw format it describes as a fallback', () => {
-  test('the example task file parses with no repairs needed', () => {
-    const example = codeBlocks('markdown')[0];
-    expect(example).toBeDefined();
+describe('the HTTP API it documents', () => {
+  /** The rows of the HTTP table: method, path. */
+  function documentedRoutes(): Array<[string, string]> {
+    return [...DOC.matchAll(/^\| `(GET|POST|PATCH|DELETE) (\/api\/[^`]+)`/gm)].map(m => [m[1]!, m[2]!]);
+  }
 
-    const result = readTask(example!, {
-      state: 'next',
-      stem: 'fix-printer-driver',
-      birthtimeMs: Date.UTC(2026, 8, 12),
-      mtimeMs: Date.UTC(2026, 8, 12),
-      nowIso: NOW,
-      mintId: () => 'zzzzzzzzzzzz',
-    });
+  test('every row it lists answers, rather than 404ing', async () => {
+    const v = openVault();
+    const server = serveFor(v.dir, NOW);
+    try {
+      const token = server.token('agent:contract');
+      await omni(['add', 'Fix printer driver', '-t', 'agent', '--next'], {dir: v.dir, now: NOW});
 
-    expect(result.kind).toBe('ok');
-    if (result.kind !== 'ok') return;
-    expect(result.needsHealing).toBe(false);
-    expect(result.task.tags).toEqual(['home', 'errand', 'agent']);
+      const routes = documentedRoutes();
+      expect(routes.length).toBeGreaterThan(8);
+
+      const bodies: Record<string, unknown> = {
+        '/api/tasks': {title: 'From HTTP', state: 'next', tags: ['agent']},
+        submit: {note: 'did it'},
+        note: {note: 'progress'},
+        move: {to: 'someday', note: 'not now'},
+        tags: {add: ['http']},
+      };
+
+      for (const [method, template] of routes) {
+        const path = template.split('?')[0]!.replace('<task>', 'fix-printer-driver');
+        const query = template.includes('?') ? `?${template.split('?')[1]}` : '';
+        const action = path.split('/').at(-1)!;
+        const body = method === 'GET' ? undefined : (bodies[path] ?? bodies[action] ?? {title: 'Renamed'});
+
+        // Each write starts from a task in next, so the order of rows does not matter.
+        if (method !== 'GET') await omni(['mv', 'fix-printer-driver', 'next'], {dir: v.dir, now: NOW});
+        const current = JSON.parse((await omni(['show', 'fix-printer-driver', '--json'], {dir: v.dir, now: NOW})).stdout) as {
+          version: number;
+        };
+
+        const response = await fetch(`${server.url}${path}${query}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+            ...(method === 'PATCH' ? {'if-match': String(current.version)} : {}),
+          },
+          ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+        });
+        const json = (await response.json()) as {ok?: boolean};
+        expect({method, path, success: response.ok && json.ok === true}).toEqual({method, path, success: true});
+      }
+    } finally {
+      await server.stop();
+    }
   });
 
-  test('it names every state directory the app creates', () => {
-    for (const dir of ['inbox/', 'next/', 'waiting/', 'someday/', 'done/YYYY-MM/']) {
-      expect(DOC).toContain(dir);
+  test('a stale PATCH really is refused with 409 and the current task, as it says', async () => {
+    const v = openVault();
+    const server = serveFor(v.dir, NOW);
+    try {
+      const token = server.token('agent:contract');
+      await omni(['add', 'Fix printer driver', '--next'], {dir: v.dir, now: NOW});
+      await omni(['note', 'fix-printer-driver', 'moved on'], {dir: v.dir, now: NOW});
+
+      const response = await fetch(`${server.url}/api/tasks/fix-printer-driver`, {
+        method: 'PATCH',
+        headers: {authorization: `Bearer ${token}`, 'if-match': '1'},
+        body: JSON.stringify({title: 'Mine'}),
+      });
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as {task: {version: number}}).task.version).toBe(2);
+    } finally {
+      await server.stop();
     }
-    expect(baseDirectories()).toContain('projects/active');
+  });
+});
+
+describe('the document as the app ships it', () => {
+  test('omni agents prints it, and the server serves the same text', async () => {
+    const v = openVault();
+    expect((await omni(['agents'], {dir: v.dir, now: NOW})).stdout).toBe(DOC.trimEnd());
+
+    const server = serveFor(v.dir, NOW);
+    try {
+      const response = await fetch(`${server.url}/api/agents`, {
+        headers: {authorization: `Bearer ${server.token('agent:reader')}`},
+      });
+      expect(((await response.json()) as {contract: string}).contract).toBe(DOC);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test('it tells agents to go through omni rather than the database', () => {
+    expect(DOC).toContain('Do not write to the database directly');
+    expect(DOC).toContain('--json');
   });
 
   test('the tag rule it quotes accepts what it tells agents to write', () => {
@@ -324,29 +372,9 @@ describe('the raw format it describes as a fallback', () => {
     }
     expect(DOC).toContain('lowercase, no spaces');
   });
-});
 
-describe('the document as the app ships it', () => {
-  test('omni init writes it, and omni agents prints what is on disk', async () => {
-    const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
-
-    expect(readFileSync(join(v.dir, 'AGENTS.md'), 'utf8')).toBe(DOC);
-    expect((await omni(['agents'], {dir: v.dir, now: NOW})).stdout).toBe(DOC.trimEnd());
-  });
-
-  test('it tells agents to use the CLI rather than write files', () => {
-    expect(DOC).toContain('Do not write the files directly');
-    expect(DOC).toContain('--json');
-  });
-
-  test('a hand-edited document is preserved rather than silently replaced', async () => {
-    const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
-    v.put('AGENTS.md', '# my own notes\n');
-
-    const result = await omni(['init'], {dir: v.dir, now: NOW});
-    expect(result.stderr).toContain('AGENTS.local.md');
-    expect(v.read('AGENTS.md.previous')).toBe('# my own notes\n');
+  test('it tells agents how to get connected before anything else', () => {
+    expect(DOC.indexOf('OMNI_TOKEN')).toBeLessThan(DOC.indexOf('## Finding work'));
+    expect(DOC).toContain('omni account token');
   });
 });

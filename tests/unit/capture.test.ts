@@ -3,9 +3,9 @@ import {
   applyTagEdit,
   formatTags,
   parseCapture,
+  completeLastWord,
   parseTagEdit,
 } from '../../src/core/capture.ts';
-import {completeLastWord} from '../../src/ui/components/TextInput.tsx';
 
 describe('quick capture', () => {
   test('a plain line is just a title', () => {

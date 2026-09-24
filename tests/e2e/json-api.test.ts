@@ -24,7 +24,6 @@ afterEach(() => {
 
 async function seeded(): Promise<Vault> {
   const v = openVault();
-  await omni(['init'], {dir: v.dir, now: NOW});
   await omni(['add', 'Fix printer driver', '-t', 'home,agent', '--next'], {dir: v.dir, now: NOW});
   await omni(['add', 'Draft the memo', '-t', 'work', '--next', '--due', '2026-10-15'], {
     dir: v.dir,
@@ -60,12 +59,11 @@ describe('reading', () => {
       stem: 'fix-printer-driver',
     });
     expect(typeof task!['id']).toBe('string');
-    expect(String(task!['path'])).toContain('/next/fix-printer-driver.md');
+    expect(task!['version']).toBe(1);
   });
 
   test('field names match the frontmatter, so both views agree', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Chase Acme', '-s', 'waiting', '-w', 'Acme Support'], {dir: v.dir, now: NOW});
 
     const [task] = parse((await omni(['waiting', '--json'], {dir: v.dir, now: NOW})).stdout) as Array<
@@ -88,7 +86,6 @@ describe('reading', () => {
 
   test('an empty list is an empty array, not an error or a message', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     const result = await omni(['next', '--json'], {dir: v.dir, now: NOW});
 
     expect(result.code).toBe(0);
@@ -137,12 +134,11 @@ describe('writing', () => {
     expect(body.ok).toBe(true);
     expect(body.task['state']).toBe('done');
     expect(body.task['done']).toBe(NOW);
-    expect(String(body.task['path'])).toContain('/done/2026-09/');
+    expect(body.task['version']).toBe(2);
   });
 
   test('add returns the task it created', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
 
     const body = parse(
       (await omni(['add', 'A new thing', '-t', 'x', '--next', '--json'], {dir: v.dir, now: NOW}))
@@ -218,7 +214,6 @@ describe('failures parse the same way as successes', () => {
 describe('stdout stays clean for a parser', () => {
   test('the tickler sweep never writes to stdout in JSON mode', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['add', 'Surfaces now', '-s', 'someday', '--defer', '2026-09-01'], {
       dir: v.dir,
       now: NOW,
@@ -238,21 +233,8 @@ describe('stdout stays clean for a parser', () => {
     expect(result.stderr).toBe('');
   });
 
-  test('doctor reports findings as data', async () => {
-    const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
-    v.put('inbox/bare-note.md', 'no frontmatter at all\n');
-
-    const result = await omni(['doctor', '--json'], {dir: v.dir, now: NOW});
-    const body = parse(result.stdout) as {findings: Array<Record<string, unknown>>};
-    expect(body.findings.length).toBeGreaterThan(0);
-    expect(body.findings[0]).toHaveProperty('kind');
-    expect(body.findings[0]).toHaveProperty('fixable');
-  });
-
   test('projects come back with the stalled flag an agent would act on', async () => {
     const v = openVault();
-    await omni(['init'], {dir: v.dir, now: NOW});
     await omni(['project', 'new', 'Kitchen', '--outcome', 'Finished'], {dir: v.dir, now: NOW});
 
     const [project] = parse(

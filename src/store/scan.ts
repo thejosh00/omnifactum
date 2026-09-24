@@ -16,23 +16,42 @@ import {readTask} from '../core/task.ts';
 import {PROJECT_STATES, TASK_STATES} from '../core/types.ts';
 import type {
   DamagedFile,
-  ProjectFile,
+  Project,
   ProjectState,
-  TaskFile,
+  Task,
   TaskState,
 } from '../core/types.ts';
 import {isIgnoredDirectory, isReadableEntry, stemOf} from './paths.ts';
 
+/** A task as it was found on disk. Only `omni import` reads files now. */
+export interface DiskTaskFile {
+  task: Task;
+  path: string;
+  stem: string;
+  mtimeMs: number;
+  size: number;
+  raw: string;
+}
+
+export interface DiskProjectFile {
+  project: Project;
+  path: string;
+  stem: string;
+  mtimeMs: number;
+  size: number;
+  raw: string;
+}
+
 export interface ScanResult {
-  tasks: TaskFile[];
-  projects: ProjectFile[];
+  tasks: DiskTaskFile[];
+  projects: DiskProjectFile[];
   damaged: DamagedFile[];
 }
 
 export interface ScanOptions {
   /** Files already parsed, keyed by path, reused when mtime and size have not moved. */
-  previous?: Map<string, TaskFile>;
-  previousProjects?: Map<string, ProjectFile>;
+  previous?: Map<string, DiskTaskFile>;
+  previousProjects?: Map<string, DiskProjectFile>;
   nowIso?: string;
   /** Injected so tests are deterministic. */
   mint?: () => string;
@@ -171,7 +190,7 @@ export function scan(dataDir: string, options: ScanOptions = {}): ScanResult {
   const mint = options.mint ?? defaultMint;
   const nowIso = options.nowIso ?? new Date().toISOString();
 
-  const tasks = parseAll<TaskState, TaskFile>(
+  const tasks = parseAll<TaskState, DiskTaskFile>(
     taskCandidates(dataDir),
     options.previous,
     file => file.task.state,
@@ -201,7 +220,7 @@ export function scan(dataDir: string, options: ScanOptions = {}): ScanResult {
     },
   );
 
-  const projects = parseAll<ProjectState, ProjectFile>(
+  const projects = parseAll<ProjectState, DiskProjectFile>(
     projectCandidates(dataDir),
     options.previousProjects,
     file => file.project.state,
@@ -242,7 +261,7 @@ export function scan(dataDir: string, options: ScanOptions = {}): ScanResult {
 export function scanTasks(
   dataDir: string,
   options: ScanOptions = {},
-): {tasks: TaskFile[]; damaged: DamagedFile[]} {
+): {tasks: DiskTaskFile[]; damaged: DamagedFile[]} {
   const {tasks, damaged} = scan(dataDir, options);
   return {tasks, damaged};
 }

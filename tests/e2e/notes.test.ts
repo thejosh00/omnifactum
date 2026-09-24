@@ -26,7 +26,6 @@ afterEach(() => {
 
 async function seeded(): Promise<Vault> {
   const v = openVault();
-  await omni(['init'], {dir: v.dir, now: NOW});
   await omni(['add', 'Fix printer driver', '-t', 'home,agent', '--next'], {dir: v.dir, now: NOW});
   return v;
 }
@@ -57,7 +56,7 @@ describe('recording what happened', () => {
       (await omni(['show', 'fix-printer-driver', '--json'], {dir: v.dir, now: NOW})).stdout,
     ) as Record<string, unknown>;
 
-    expect({...after, log: []}).toEqual({...before, log: []});
+    expect({...after, log: [], version: 0}).toEqual({...before, log: [], version: 0});
     expect((after['log'] as unknown[]).length).toBe((before['log'] as unknown[]).length + 1);
   });
 

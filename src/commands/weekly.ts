@@ -9,13 +9,12 @@
  * script, in a cron job, or as something an agent can read and act on. The guided walk
  * lives in the interactive interface, where acting on what you find is a keypress away.
  */
-import {existsSync, readFileSync} from 'node:fs';
-import {join} from 'node:path';
 import {hasFlag} from '../core/args.ts';
 import {planReviewed} from '../core/project.ts';
 import {appendToLog, buildReview, daysSinceLastReview, summarize} from '../core/review.ts';
 import {pluralize} from '../core/render.ts';
-import {REVIEW_FILE} from '../store/paths.ts';
+/** The weekly review log, kept per account as a document. */
+const REVIEW_FILE = 'REVIEW.md';
 import type {ReviewPlan} from '../core/review.ts';
 import {
   EXIT_ERROR,
@@ -62,8 +61,7 @@ export const weeklyCommand: Command = ctx => {
 };
 
 function readLog(ctx: CommandContext): string | undefined {
-  const path = join(ctx.dataDir, REVIEW_FILE);
-  return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+  return ctx.store.readDocument(REVIEW_FILE);
 }
 
 function render(plan: ReviewPlan, since: number | undefined): string[] {

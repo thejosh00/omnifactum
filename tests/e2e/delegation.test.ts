@@ -28,7 +28,6 @@ afterEach(() => {
 
 async function started(): Promise<Vault> {
   const v = openVault();
-  await omni(['init'], {dir: v.dir, now: NOW});
   return v;
 }
 

@@ -10,7 +10,7 @@ function entry(actor: string, text: string): LogEntry {
 function file(
   id: string,
   state: TaskState,
-  options: {title?: string; log?: LogEntry[]; mtimeMs?: number; size?: number} = {},
+  options: {title?: string; log?: LogEntry[]; version?: number} = {},
 ): TaskFile {
   return {
     task: {
@@ -23,11 +23,8 @@ function file(
       log: options.log ?? [],
       repairs: [],
     },
-    path: `/${state}/${id}.md`,
     stem: id,
-    mtimeMs: options.mtimeMs ?? 1,
-    size: options.size ?? 10,
-    raw: '',
+    version: options.version ?? 1,
   };
 }
 
@@ -61,8 +58,8 @@ describe('spotting what someone else did', () => {
   });
 
   test('a task rewritten in place was edited', () => {
-    const before = snap([file('a', 'next', {mtimeMs: 1, size: 10})]);
-    const after = snap([file('a', 'next', {mtimeMs: 2, size: 40})]);
+    const before = snap([file('a', 'next', {version: 1})]);
+    const after = snap([file('a', 'next', {version: 2})]);
     expect(diffSnapshots(before, after)[0]).toMatchObject({kind: 'edited'});
   });
 

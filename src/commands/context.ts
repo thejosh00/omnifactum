@@ -10,14 +10,12 @@
  * caller guessing what went wrong.
  */
 import {resolveIdPrefix} from '../core/id.ts';
-import {ACTOR_USER, planPromote} from '../core/mutation.ts';
 import {failure, ok, renderJson} from '../core/serialize.ts';
-import {readyToPromote} from '../core/tickler.ts';
+import {sweepTickler} from '../db/tickler.ts';
 import type {ParsedArgs} from '../core/args.ts';
 import type {Snapshot} from '../core/snapshot.ts';
 import type {TaskFile} from '../core/types.ts';
-import type {Store} from '../store/store.ts';
-import {LockTimeoutError} from '../store/lock.ts';
+import type {Store} from '../db/store.ts';
 
 export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
@@ -28,7 +26,6 @@ export const EXIT_BUSY = 4;
 
 export interface CommandContext {
   store: Store;
-  dataDir: string;
   args: ParsedArgs;
   now: () => string;
   out: (line?: string) => void;
@@ -86,49 +83,14 @@ export function emitOk(
 }
 
 /**
- * How long the sweep will wait for the lock before giving up on it.
- *
- * Deliberately far shorter than the default. The sweep runs inside every command,
- * including the ones that only read, so waiting the full timeout and then throwing would
- * turn someone else's write into a failed `omni next --json` — no JSON, the wrong exit
- * code, and an agent with nothing to parse. Promotion is idempotent and unhurried by a
- * few seconds, so a busy vault simply skips it.
- */
-const SWEEP_TIMEOUT_MS = 250;
-
-/**
  * Promote any `someday/` task whose defer date has arrived.
  *
- * This runs at the start of every invocation, which means a command that looks like a
- * read can move files. That is the price of having deferred tasks appear on schedule
- * with no daemon, so every promotion leaves a log line and the sweep is idempotent.
- *
- * Being idempotent is also what lets it be skipped. If someone else holds the lock, the
- * promotion is dropped rather than waited for: the next invocation will do it, and a
- * read that was only passing through has no business failing over it.
+ * The server also does this on a timer, so this is a backstop: a command that runs just
+ * after midnight sees the deferred task where it now belongs, rather than a minute
+ * later. Promotion is idempotent and leaves a log line, so running it twice is harmless.
  */
 export function runTicklerSweep(ctx: CommandContext, snapshot: Snapshot): Snapshot {
-  const nowIso = ctx.now();
-  const ready = readyToPromote(snapshot.tasks, nowIso);
-  if (ready.length === 0) return snapshot;
-
-  let promoted = 0;
-  try {
-    // One lock for the whole sweep rather than one per task.
-    ctx.store.batch(
-      () => {
-        for (const file of ready) {
-          const result = ctx.store.updateTask(file.task.id, task => planPromote(task, {nowIso}));
-          if (result.kind === 'ok') promoted += 1;
-        }
-      },
-      {timeoutMs: SWEEP_TIMEOUT_MS},
-    );
-  } catch (error) {
-    if (!(error instanceof LockTimeoutError)) throw error;
-    return snapshot;
-  }
-
+  const promoted = sweepTickler(ctx.store, ctx.now());
   if (promoted === 0) return snapshot;
   // Never on stdout: it would corrupt an agent's parse and surprise a script.
   if (!ctx.json) {
@@ -234,18 +196,12 @@ export function requireTask(
 /**
  * Who is making this change, as recorded in the task's log.
  *
- * Taken from `--actor`, then `OMNI_ACTOR`, then defaulting to `you`. An agent should
- * set one: a note saying what was done is far less useful when nobody can tell whether
- * a person or a tool did it. The convention is `agent:<name>`.
+ * The server decides this from the caller's token, and any `--actor` or `OMNI_ACTOR`
+ * has already been applied when the token allows it. An agent's token always names
+ * that agent, so it cannot claim to be a person to get past the review rule.
  */
 export function actorOf(ctx: CommandContext): string {
-  const flagged = ctx.args.flags.get('actor')?.[0]?.trim();
-  if (flagged !== undefined && flagged.length > 0) return flagged;
-
-  const fromEnv = process.env['OMNI_ACTOR']?.trim();
-  if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
-
-  return ACTOR_USER;
+  return ctx.store.actor;
 }
 
 export function describe(error: unknown): string {

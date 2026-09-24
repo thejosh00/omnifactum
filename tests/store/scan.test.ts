@@ -2,7 +2,6 @@ import {afterEach, describe, expect, test} from 'bun:test';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {scanTasks} from '../../src/store/scan.ts';
-import {backupConflict, TEMP_PREFIX} from '../../src/store/write.ts';
 import {makeVault, taskFile, type Vault} from '../helpers/vault.ts';
 
 let vault: Vault | undefined;
@@ -68,14 +67,14 @@ describe('finding tasks', () => {
 describe('what the scanner deliberately cannot see', () => {
   test('a half-written temp file', () => {
     const v = openVault();
-    writeFileSync(join(v.dir, 'next', `${TEMP_PREFIX}inprogress`), '---\nid: broken');
+    writeFileSync(join(v.dir, 'next', '.omni-tmp-inprogress'), '---\nid: broken');
     expect(scan(v.dir).tasks).toEqual([]);
     expect(scan(v.dir).damaged).toEqual([]);
   });
 
   test('a conflict backup', () => {
     const v = openVault();
-    backupConflict(v.dir, 'a.md', taskFile({id: '0tq7f2k9aaaa', title: 'A'}), '2026-09-12T11:03:00Z');
+    v.put('.omni/conflicts/20260912T110300Z-a.md', taskFile({id: '0tq7f2k9aaaa', title: 'A'}));
     expect(scan(v.dir).tasks).toEqual([]);
   });
 

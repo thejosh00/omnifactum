@@ -11,7 +11,7 @@
  */
 import {latestEntry} from './log.ts';
 import type {Snapshot} from './snapshot.ts';
-import type {TaskFile, TaskState} from './types.ts';
+import type {Task, TaskFile, TaskState} from './types.ts';
 
 export type ChangeKind = 'completed' | 'added' | 'moved' | 'edited' | 'removed';
 
@@ -26,13 +26,48 @@ export interface Change {
   note?: string;
 }
 
-function attribution(file: TaskFile): {actor?: string; note?: string} {
-  const entry = latestEntry(file.task.log);
+function attribution(task: Task): {actor?: string; note?: string} {
+  const entry = latestEntry(task.log);
   if (entry === undefined) return {};
   const out: {actor?: string; note?: string} = {};
   if (entry.actor.length > 0) out.actor = entry.actor;
   if (entry.text.length > 0) out.note = entry.text;
   return out;
+}
+
+/**
+ * What one write did to one task, or undefined if it did nothing. `before` is absent
+ * for a new task and `after` for a deleted one.
+ *
+ * `edited` is decided by the caller, who knows whether the stored version moved.
+ */
+export function changeBetween(
+  before: Task | undefined,
+  after: Task | undefined,
+  edited = true,
+): Change | undefined {
+  if (after === undefined) {
+    if (before === undefined) return undefined;
+    return {kind: 'removed', id: before.id, title: before.title, from: before.state};
+  }
+
+  if (before === undefined) {
+    return {kind: 'added', id: after.id, title: after.title, to: after.state, ...attribution(after)};
+  }
+
+  if (before.state !== after.state) {
+    return {
+      kind: after.state === 'done' ? 'completed' : 'moved',
+      id: after.id,
+      title: after.title,
+      from: before.state,
+      to: after.state,
+      ...attribution(after),
+    };
+  }
+
+  if (!edited) return undefined;
+  return {kind: 'edited', id: after.id, title: after.title, to: after.state, ...attribution(after)};
 }
 
 /**
@@ -45,51 +80,17 @@ export function diffSnapshots(before: Snapshot, after: Snapshot): Change[] {
   const changes: Change[] = [];
 
   for (const file of after.tasks) {
-    const previous = before.byId.get(file.task.id);
-
-    if (previous === undefined) {
-      changes.push({
-        kind: 'added',
-        id: file.task.id,
-        title: file.task.title,
-        to: file.task.state,
-        ...attribution(file),
-      });
-      continue;
-    }
-
-    if (previous.task.state !== file.task.state) {
-      changes.push({
-        kind: file.task.state === 'done' ? 'completed' : 'moved',
-        id: file.task.id,
-        title: file.task.title,
-        from: previous.task.state,
-        to: file.task.state,
-        ...attribution(file),
-      });
-      continue;
-    }
-
-    if (previous.mtimeMs !== file.mtimeMs || previous.size !== file.size) {
-      changes.push({
-        kind: 'edited',
-        id: file.task.id,
-        title: file.task.title,
-        to: file.task.state,
-        ...attribution(file),
-      });
-    }
+    const previous: TaskFile | undefined = before.byId.get(file.task.id);
+    const change = changeBetween(
+      previous?.task,
+      file.task,
+      previous !== undefined && previous.version !== file.version,
+    );
+    if (change !== undefined) changes.push(change);
   }
 
   for (const file of before.tasks) {
-    if (!after.byId.has(file.task.id)) {
-      changes.push({
-        kind: 'removed',
-        id: file.task.id,
-        title: file.task.title,
-        from: file.task.state,
-      });
-    }
+    if (!after.byId.has(file.task.id)) changes.push(changeBetween(file.task, undefined)!);
   }
 
   return changes;

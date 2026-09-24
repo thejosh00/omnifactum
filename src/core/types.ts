@@ -137,25 +137,21 @@ export interface Project {
   repairs: Repair[];
 }
 
-/** A parsed entity plus where it came from. The store owns this; core does not. */
+/**
+ * A stored task. `version` goes up by one on every write, which is what lets an edit
+ * made from a stale copy be refused rather than silently overwrite someone else's.
+ */
 export interface TaskFile {
   task: Task;
-  path: string;
-  /** The filename stem, which is a label and never an identity. */
+  /** A short slug of the title, unique within the account. A label, never an identity. */
   stem: string;
-  mtimeMs: number;
-  size: number;
-  /** The exact bytes read, so an unmodified write can be byte-identical. */
-  raw: string;
+  version: number;
 }
 
 export interface ProjectFile {
   project: Project;
-  path: string;
   stem: string;
-  mtimeMs: number;
-  size: number;
-  raw: string;
+  version: number;
 }
 
 /** A file under the data dir that could not be parsed. Never rewritten, only reported. */

@@ -80,3 +80,30 @@ export function applyTagEdit(current: readonly string[], edit: TagEdit): string[
   const base = edit.set.length > 0 ? edit.set : [...current];
   return normalizeTags(base.filter(tag => !removals.has(tag))).tags;
 }
+
+/** Complete the word under the cursor from the offered list, longest common prefix. */
+export function completeLastWord(value: string, completions: readonly string[]): string | undefined {
+  const match = /(^|\s)(\S*)$/.exec(value);
+  if (match === null) return undefined;
+
+  const partial = match[2] ?? '';
+  const head = value.slice(0, value.length - partial.length);
+
+  const candidates = completions.filter(option => option.startsWith(partial));
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return `${head}${candidates[0]!} `;
+
+  const shared = commonPrefix(candidates);
+  return shared.length > partial.length ? `${head}${shared}` : undefined;
+}
+
+function commonPrefix(values: readonly string[]): string {
+  if (values.length === 0) return '';
+  let prefix = values[0]!;
+  for (const value of values.slice(1)) {
+    let i = 0;
+    while (i < prefix.length && i < value.length && prefix[i] === value[i]) i++;
+    prefix = prefix.slice(0, i);
+  }
+  return prefix;
+}

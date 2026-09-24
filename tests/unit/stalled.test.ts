@@ -16,11 +16,8 @@ function project(stem: string, overrides: {state?: ProjectState; id?: string; ou
       log: [],
       repairs: [],
     },
-    path: `/projects/${overrides.state ?? 'active'}/${stem}.md`,
     stem,
-    mtimeMs: 0,
-    size: 0,
-    raw: '',
+    version: 1,
   };
 }
 
@@ -37,11 +34,8 @@ function task(stem: string, state: TaskState, projectRef?: string): TaskFile {
       repairs: [],
       ...(projectRef === undefined ? {} : {project: projectRef}),
     },
-    path: `/${state}/${stem}.md`,
     stem,
-    mtimeMs: 0,
-    size: 0,
-    raw: '',
+    version: 1,
   };
 }
 

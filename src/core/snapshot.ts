@@ -33,7 +33,7 @@ export interface Snapshot {
 export function buildSnapshot(
   tasks: TaskFile[],
   projects: ProjectFile[],
-  damaged: DamagedFile[],
+  damaged: DamagedFile[] = [],
 ): Snapshot {
   const byId = new Map<string, TaskFile>();
   const seen = new Map<string, number>();

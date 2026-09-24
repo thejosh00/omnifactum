@@ -5,7 +5,6 @@
  * can carry the thing a tag cannot: a statement of what done looks like, and therefore
  * the ability to notice when nothing is moving it forward.
  */
-import {readFileSync} from 'node:fs';
 import {flagList, flagValue, hasFlag} from '../core/args.ts';
 import {
   planCompleteProject,
@@ -14,6 +13,7 @@ import {
   planRenameProject,
   planSetOutcome,
   resolveProjectRef,
+  writeProject,
 } from '../core/project.ts';
 import {pluralize, shortId} from '../core/render.ts';
 import {projectToJson, taskToJson} from '../core/serialize.ts';
@@ -225,7 +225,7 @@ function showProject(ctx: CommandContext): number {
       tasks: tasks.map(taskToJson),
     },
     () => {
-      const lines = [readFileSync(found.file.path, 'utf8').trimEnd(), ''];
+      const lines = [writeProject(found.file.project, '').trimEnd(), ''];
       lines.push(tasks.length === 0 ? 'No actions yet.' : 'Actions:');
       for (const task of tasks) {
         lines.push(`  ${shortId(task.task.id)}  ${task.task.state.padEnd(7)}  ${task.task.title}`);
