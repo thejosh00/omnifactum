@@ -65,6 +65,24 @@ describe('filing a clarified item', () => {
     expect(task).toMatchObject({state: 'waiting', waiting_on: 'Priya', project: 'renovate-the-kitchen', asked: NOW});
   });
 
+  test('a project that does not exist yet is started, and the next step becomes the task', async () => {
+    const {v, clarify} = await setup();
+    await omni(['add', 'Plan the garden'], {dir: v.dir, now: NOW});
+
+    const response = await clarify('plan-the-garden', {
+      from: 'inbox',
+      outcome: {kind: 'file', state: 'next', tags: [], project: 'Plan the garden', title: 'Sketch the beds'},
+    });
+    expect(response.status).toBe(200);
+
+    const task = (await response.json()).task;
+    expect(task).toMatchObject({state: 'next', title: 'Sketch the beds', project: 'plan-the-garden'});
+    const projects = await omni(['project', 'list', '--json'], {dir: v.dir, now: NOW});
+    expect(JSON.parse(projects.stdout)).toEqual([
+      expect.objectContaining({stem: 'plan-the-garden', title: 'Plan the garden', outcome: ''}),
+    ]);
+  });
+
   test('a confirmed discard deletes it', async () => {
     const {v, clarify} = await setup();
     await omni(['add', 'Old idea'], {dir: v.dir, now: NOW});

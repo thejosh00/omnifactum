@@ -15,6 +15,7 @@ import {
 } from '../core/project.ts';
 import {projectToJson, type ProjectJson} from '../core/serialize.ts';
 import {membershipFor, type Snapshot} from '../core/snapshot.ts';
+import {titleFromStem} from '../core/task.ts';
 import type {Project, ProjectFile, ProjectState, TaskFile} from '../core/types.ts';
 import type {Store, Updated} from './store.ts';
 
@@ -78,6 +79,35 @@ export function createProject(store: Store, input: NewProject): ProjectFile {
     throw new ProjectError(error instanceof Error ? error.message : String(error), 'usage');
   }
   return settled(store.createProjectSafely(planned));
+}
+
+/**
+ * The stem a task should point at for `ref`, starting the project if there is none.
+ *
+ * A task's project is a link to a project you can open, not free text, so naming one
+ * that does not exist — `+kitchen` in a capture, a new name in clarify — starts it
+ * rather than leaving a dangling reference. It starts without an outcome; see
+ * `outcomeLater`. A name that matches more than one project is refused, not guessed.
+ */
+export function ensureProject(store: Store, ref: string, nowIso: string): {stem: string; created?: ProjectFile} {
+  return store.batch(() => {
+    const match = resolveProjectRef(store.load().projects, ref);
+    if (match.kind === 'ok') return {stem: match.project.stem};
+    if (match.kind === 'ambiguous') {
+      throw new ProjectError(`"${ref}" matches more than one project`, 'ambiguous', {candidates: match.candidates});
+    }
+    const name = ref.trim();
+    // A capture token is a stem (`+kitchen-reno`); a typed name is already a title.
+    const title = /\s/.test(name) ? name : titleFromStem(name);
+    let planned: Project;
+    try {
+      planned = planNewProject({id: store.mintId(), title, outcome: '', nowIso, outcomeLater: true});
+    } catch (error) {
+      throw new ProjectError(error instanceof Error ? error.message : String(error), 'usage');
+    }
+    const created = settled(store.createProjectSafely(planned));
+    return {stem: created.stem, created};
+  });
 }
 
 export interface Renamed {

@@ -8,7 +8,7 @@
  * bothering you. Only a real clash, someone else rewriting the same field, asks you
  * which to keep.
  */
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useState, type ReactNode} from 'react';
 import {formatDue, timeAgo} from '../core/format.ts';
 import {api, ApiError, type TaskJson} from './api.ts';
 
@@ -46,12 +46,15 @@ function FieldInput({
   value,
   type = 'text',
   placeholder,
+  action,
   onSave,
 }: {
   label: string;
   value: string;
   type?: 'text' | 'date';
   placeholder?: string;
+  /** Something to do with the value, shown beside the label. */
+  action?: ReactNode;
   onSave: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -61,7 +64,10 @@ function FieldInput({
   };
   return (
     <label className="field">
-      <span>{label}</span>
+      <span>
+        {label}
+        {action}
+      </span>
       <input
         type={type}
         value={type === 'date' ? draft.slice(0, 10) : draft}
@@ -87,6 +93,7 @@ export function Detail({
   actions,
   onClose,
   onChanged,
+  onOpenProject,
 }: {
   id: string;
   /** Bumped whenever the list hears this task changed elsewhere. */
@@ -95,6 +102,8 @@ export function Detail({
   actions: DetailActions;
   onClose: () => void;
   onChanged: () => void;
+  /** Open the project a task belongs to, by the stem the task stores. */
+  onOpenProject: (ref: string) => void;
 }) {
   const [task, setTask] = useState<TaskJson>();
   const [missing, setMissing] = useState(false);
@@ -294,6 +303,13 @@ export function Detail({
           label="Project"
           value={task.project ?? ''}
           placeholder="none"
+          action={
+            task.project !== undefined && (
+              <button className="link field-action" onClick={() => onOpenProject(task.project!)}>
+                open →
+              </button>
+            )
+          }
           onSave={value => void save('project', value, task)}
         />
       </div>

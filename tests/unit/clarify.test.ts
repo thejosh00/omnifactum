@@ -119,20 +119,30 @@ describe('the actionable branch', () => {
     });
   });
 
-  test('part of a project asks which, and keeps the reference', () => {
-    const session = walk('yes', 'project');
-    expect(session.step).toBe('project');
-    expect(walk('yes', 'project', 'renovate-kitchen', 'me', '').outcome).toEqual({
+  test('part of a project asks which, then for the next step, and keeps both', () => {
+    expect(walk('yes', 'project').step).toBe('project');
+    expect(walk('yes', 'project', 'renovate-kitchen').step).toBe('next-step');
+    expect(walk('yes', 'project', 'renovate-kitchen', 'Measure the walls', 'me', '').outcome).toEqual({
       kind: 'file',
       state: 'next',
       tags: [],
       project: 'renovate-kitchen',
+      title: 'Measure the walls',
     });
   });
 
-  test('leaving the project blank simply skips the link', () => {
-    const outcome = walk('yes', 'project', '', 'me', '').outcome;
-    expect(outcome).toEqual({kind: 'file', state: 'next', tags: []});
+  test('the next step is required, because the captured text is the outcome', () => {
+    const session = walk('yes', 'project', 'renovate-kitchen');
+    expect(answerClarify(session, '  ')).toBe(session);
+  });
+
+  test('leaving the project blank skips the link but still asks for the next step', () => {
+    const outcome = walk('yes', 'project', '', 'Call Sam', 'me', '').outcome;
+    expect(outcome).toEqual({kind: 'file', state: 'next', tags: [], title: 'Call Sam'});
+  });
+
+  test('one action keeps its captured title', () => {
+    expect(walk('yes', 'one', 'me', '').outcome).not.toHaveProperty('title');
   });
 
   test('someone else owning it asks who, and files it in waiting', () => {
@@ -228,11 +238,20 @@ describe('applying an outcome', () => {
   });
 
   test('a project link survives the move and is named in the log', () => {
-    const outcome = walk('yes', 'project', 'renovate-kitchen', 'me', '').outcome!;
+    const outcome = walk('yes', 'project', 'renovate-kitchen', 'Measure the walls', 'me', '').outcome!;
     const task = applyClarify(inboxTask(), outcome, {nowIso: NOW});
 
     expect(task.project).toBe('renovate-kitchen');
     expect(task.log[0]!.text).toContain('Part of renovate-kitchen.');
+  });
+
+  test('the next step becomes the title, and the captured text stays in the log', () => {
+    const captured = inboxTask();
+    const outcome = walk('yes', 'project', 'renovate-kitchen', 'Measure the walls', 'me', '').outcome!;
+    const task = applyClarify(captured, outcome, {nowIso: NOW});
+
+    expect(task.title).toBe('Measure the walls');
+    expect(task.log.at(-1)!.text).toContain(`Captured as "${captured.title}".`);
   });
 
   test('someday keeps nothing that belongs to another state', () => {

@@ -27,7 +27,6 @@ import {
   planSetTitle,
   planSubmit,
 } from '../core/mutation.ts';
-import {resolveProjectRef} from '../core/project.ts';
 import {failure, ok, projectToJson, taskToJson} from '../core/serialize.ts';
 import {countsByState, type Snapshot} from '../core/snapshot.ts';
 import {normalizeTag} from '../core/tags.ts';
@@ -47,6 +46,7 @@ import {latestEventSeq, type EventHub} from '../db/events.ts';
 import {
   createProject,
   editProject,
+  ensureProject,
   moveProject,
   ProjectError,
   projectJson,
@@ -169,9 +169,14 @@ function change(ctx: ApiContext, ref: string, run: (store: Store, file: TaskFile
   return store.batch(() => run(store, requireFile(store.load(), ref)));
 }
 
-function resolveProjectStem(snapshot: Snapshot, ref: string): string {
-  const match = resolveProjectRef(snapshot.projects, ref);
-  return match.kind === 'ok' ? match.project.stem : ref;
+/** The stem to store for a project named on a task, starting the project if it is new. */
+function projectStemFor(ctx: ApiContext, store: Store, ref: string): string {
+  try {
+    return ensureProject(store, ref, ctx.now()).stem;
+  } catch (error) {
+    if (error instanceof ProjectError) throw projectFailure(error);
+    throw error;
+  }
 }
 
 // --- handlers --------------------------------------------------------------------
@@ -246,7 +251,7 @@ async function createTask(ctx: ApiContext, request: Request): Promise<Response> 
         actor: ctx.caller.actor,
         tags: stringList(input, 'tags').map(normalizeTag),
         ...optional('body', stringField(input, 'body')),
-        ...optional('project', projectRef === undefined ? undefined : resolveProjectStem(store.load(), projectRef)),
+        ...optional('project', projectRef === undefined ? undefined : projectStemFor(ctx, store, projectRef)),
         ...optional('due', stringField(input, 'due')),
         ...optional('defer', defer),
         ...optional('waitingOn', stringField(input, 'waiting_on')),
@@ -362,7 +367,7 @@ async function patchTask(ctx: ApiContext, ref: string, request: Request): Promis
 
   return change(ctx, ref, (store, file) => {
     const projectStem =
-      project === undefined || project === null ? project : resolveProjectStem(store.load(), project);
+      project === undefined || project === null ? project : projectStemFor(ctx, store, project);
 
     return settle(
       store.updateTask(
@@ -435,7 +440,7 @@ async function clarifyTask(ctx: ApiContext, ref: string, request: Request): Prom
       return json(ok({deleted: taskToJson(removed.file)}));
     }
     const filed: ClarifyOutcome =
-      outcome.project === undefined ? outcome : {...outcome, project: resolveProjectStem(store.load(), outcome.project)};
+      outcome.project === undefined ? outcome : {...outcome, project: projectStemFor(ctx, store, outcome.project)};
     return settle(
       store.updateTask(file.task.id, task => applyClarify(task, filed, {nowIso: ctx.now(), actor: ctx.caller.actor})),
     );
@@ -457,6 +462,8 @@ function parseOutcome(value: unknown): ClarifyOutcome {
   const outcome: ClarifyOutcome = {kind: 'file', state: state as TaskState, tags: stringList(input, 'tags').map(normalizeTag)};
   const project = stringField(input, 'project')?.trim();
   if (project) outcome.project = project;
+  const title = stringField(input, 'title')?.trim();
+  if (title) outcome.title = title;
   const waitingOn = stringField(input, 'waitingOn')?.trim();
   if (waitingOn) outcome.waitingOn = waitingOn;
   return outcome;

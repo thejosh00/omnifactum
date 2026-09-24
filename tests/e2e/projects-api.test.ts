@@ -77,6 +77,28 @@ describe('projects over HTTP', () => {
     expect((await call('POST', '/api/projects/kitchen/move', {to: 'active'})).body['project'].state).toBe('active');
   });
 
+  test('capturing with a project that does not exist starts it, with no outcome yet', async () => {
+    const {call} = setup();
+    const created = await call('POST', '/api/tasks', {title: 'Buy tiles', project: 'kitchen-reno'});
+    expect(created.status).toBe(201);
+    expect(created.body['task'].project).toBe('kitchen-reno');
+
+    const shown = await call('GET', '/api/projects/kitchen-reno');
+    expect(shown.body['project']).toMatchObject({title: 'Kitchen reno', outcome: '', state: 'active'});
+
+    // A second capture joins the same project rather than starting another.
+    await call('POST', '/api/tasks', {title: 'Pick grout', project: 'Kitchen reno'});
+    expect((await call('GET', '/api/projects')).body['projects']).toHaveLength(1);
+  });
+
+  test('naming a new project on a task in its panel starts it too', async () => {
+    const {call} = setup();
+    await call('POST', '/api/tasks', {title: 'Buy tiles'});
+    const patched = await call('PATCH', '/api/tasks/buy-tiles', {project: 'Bathroom refit'});
+    expect(patched.body['task'].project).toBe('bathroom-refit');
+    expect((await call('GET', '/api/projects/bathroom-refit')).status).toBe(200);
+  });
+
   test('an edit from a stale copy is refused with the project as it is now', async () => {
     const {call} = setup();
     const created = await call('POST', '/api/projects', {title: 'Kitchen', outcome: 'Done'});

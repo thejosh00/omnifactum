@@ -1053,3 +1053,16 @@ button.link:hover {
 .completing:has(.suggestions) + .capture-preview {
   display: none;
 }
+.field-action {
+  float: right;
+  font-size: 12px;
+  color: var(--accent);
+}
+button.link.meta-project {
+  color: var(--accent);
+  font: inherit;
+  text-decoration: none;
+}
+button.link.meta-project:hover {
+  text-decoration: underline;
+}

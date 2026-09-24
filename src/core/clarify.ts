@@ -10,7 +10,9 @@
  *
  *   1. Is it actionable?
  *   2. If not: keep it as someday/maybe, or drop it?
- *   3. If so: is it one action, or does it need several?
+ *   3. If so: is it one action, or does it need several? Several means a project —
+ *      usually named after the item itself — and then a separate next step, because
+ *      the thing you captured is the outcome, not something you can sit down and do.
  *   4. Who does it — you, or someone else?
  *   5. What context does it belong to?
  *
@@ -27,7 +29,7 @@
  * flow be tested — every branch, every answer, the back button — without rendering a
  * screen or writing a file.
  */
-import {planAddTags, planMove, type ChangeContext} from './mutation.ts';
+import {planAddTags, planMove, planSetTitle, type ChangeContext} from './mutation.ts';
 import {normalizeTags} from './tags.ts';
 import type {Task, TaskState} from './types.ts';
 
@@ -38,6 +40,7 @@ export type ClarifyStep =
   | 'confirm-discard'
   | 'scope'
   | 'project'
+  | 'next-step'
   | 'owner'
   | 'who'
   | 'tags'
@@ -108,9 +111,16 @@ export const CLARIFY_QUESTIONS: Record<Exclude<ClarifyStep, 'done'>, ClarifyQues
   project: {
     step: 'project',
     prompt: 'Which project?',
-    hint: 'A name that does not exist yet is kept, and shows up as a dangling link.',
+    hint: 'Usually the item itself is the project. A name that does not exist yet starts a new one.',
     choices: [],
-    placeholder: 'project name or stem  (enter to leave it unlinked)',
+    placeholder: 'project name  (clear it to leave it unlinked)',
+  },
+  'next-step': {
+    step: 'next-step',
+    prompt: 'What is the very next step?',
+    hint: 'The next thing you can actually do. It becomes this task; what you captured stays in its log.',
+    choices: [],
+    placeholder: 'the next action',
   },
   owner: {
     step: 'owner',
@@ -143,6 +153,8 @@ export type ClarifyOutcome =
       state: TaskState;
       tags: string[];
       project?: string;
+      /** The next step, when the item turned out to be a project: the task's new title. */
+      title?: string;
       waitingOn?: string;
     };
 
@@ -151,6 +163,7 @@ export interface ClarifyAnswers {
   actionable?: boolean;
   scope?: 'one' | 'project';
   project?: string;
+  nextStep?: string;
   owner?: 'me' | 'delegate';
   who?: string;
   tags?: string[];
@@ -228,8 +241,14 @@ export function answerClarify(session: ClarifySession, answer: string): ClarifyS
     case 'project': {
       const answers =
         value.length === 0 ? session.answers : {...session.answers, project: value};
-      return advance(answers, 'owner');
+      return advance(answers, 'next-step');
     }
+
+    case 'next-step':
+      // Required: without it the task would keep the captured text, which is the
+      // outcome, and a project whose only action is its own outcome is not clarified.
+      if (value.length === 0) return session;
+      return advance({...session.answers, nextStep: value}, 'owner');
 
     case 'owner':
       return value === 'me'
@@ -279,6 +298,7 @@ function outcomeOf(
     tags: answers.tags ?? [],
   };
   if (answers.project !== undefined) outcome.project = answers.project;
+  if (answers.scope === 'project' && answers.nextStep !== undefined) outcome.title = answers.nextStep;
   if (answers.owner === 'delegate' && answers.who !== undefined) outcome.waitingOn = answers.who;
   return outcome;
 }
@@ -307,12 +327,15 @@ export function applyClarify(
   }
 
   let next = planAddTags(task, outcome.tags);
+  const captured = task.title;
+  if (outcome.title !== undefined && outcome.title !== captured) next = planSetTitle(next, outcome.title);
   if (outcome.project !== undefined) next = {...next, project: outcome.project};
   // Set before the move, because `planMove` is what decides whether a delegation's
   // fields survive the destination.
   if (outcome.waitingOn !== undefined) next = {...next, waitingOn: outcome.waitingOn};
 
-  return planMove(next, outcome.state, {...ctx, note: clarifyNote(outcome)});
+  const note = next.title === captured ? clarifyNote(outcome) : `${clarifyNote(outcome)} Captured as "${captured}".`;
+  return planMove(next, outcome.state, {...ctx, note});
 }
 
 /** What the log says about a clarified item, so the decision is readable later. */

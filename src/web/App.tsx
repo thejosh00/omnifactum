@@ -158,6 +158,7 @@ function Row({
   now,
   onSelect,
   onOpen,
+  onOpenProject,
 }: {
   task: TaskJson;
   selected: boolean;
@@ -165,6 +166,7 @@ function Row({
   now: string;
   onSelect: () => void;
   onOpen: () => void;
+  onOpenProject: (ref: string) => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -195,16 +197,30 @@ function Row({
     >
       <span className="row-title">{task.title}</span>
       <span className="row-meta">
-        {segments.map((segment, index) => (
-          <span
-            key={index}
-            className={`meta meta-${segment.kind}${segment.urgency === undefined ? '' : ` due-${segment.urgency}`}${
-              segment.actor?.startsWith('agent:') === true ? ' agent' : ''
-            }`}
-          >
-            {segment.text}
-          </span>
-        ))}
+        {segments.map((segment, index) =>
+          segment.kind === 'project' && task.project !== undefined ? (
+            <button
+              key={index}
+              className="link meta meta-project"
+              title="Open the project"
+              onClick={event => {
+                event.stopPropagation();
+                onOpenProject(task.project!);
+              }}
+            >
+              {segment.text}
+            </button>
+          ) : (
+            <span
+              key={index}
+              className={`meta meta-${segment.kind}${segment.urgency === undefined ? '' : ` due-${segment.urgency}`}${
+                segment.actor?.startsWith('agent:') === true ? ' agent' : ''
+              }`}
+            >
+              {segment.text}
+            </span>
+          ),
+        )}
       </span>
       {list === 'review' && latest !== undefined && <span className="row-note">{latest.text}</span>}
     </li>
@@ -762,6 +778,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
                 selected={task.id === selected?.id}
                 onSelect={() => setCursor(task.id)}
                 onOpen={() => openTask(task.id)}
+                onOpenProject={openProjectPanel}
               />
             ))}
           </ul>
@@ -794,6 +811,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           actions={actions}
           onClose={() => setOpen(undefined)}
           onChanged={() => void reload()}
+          onOpenProject={openProjectPanel}
         />
       )}
 

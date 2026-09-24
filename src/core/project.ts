@@ -257,6 +257,13 @@ export interface NewProjectInput {
   tags?: Iterable<string>;
   due?: string;
   body?: string;
+  /**
+   * Start it without an outcome. Only for a project that came into being as a side
+   * effect — named in a capture, or clarified out of an inbox item — where stopping to
+   * ask would lose the item. It then shows as "no outcome yet" and the weekly review
+   * asks for one, the same as a project that lost its outcome some other way.
+   */
+  outcomeLater?: boolean;
 }
 
 export function planNewProject(input: NewProjectInput): Project {
@@ -264,7 +271,7 @@ export function planNewProject(input: NewProjectInput): Project {
   if (title.length === 0) throw new Error('a project needs a title');
 
   const outcome = input.outcome.trim();
-  if (outcome.length === 0) {
+  if (outcome.length === 0 && input.outcomeLater !== true) {
     throw new Error('a project needs an outcome: what does done look like?');
   }
 

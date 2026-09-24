@@ -32,7 +32,7 @@ interface Tally {
 function describeOutcome(outcome: ClarifyOutcome): string {
   if (outcome.kind === 'discard') return 'Dropped';
   const where = outcome.state === 'waiting' && outcome.waitingOn !== undefined ? `waiting on ${outcome.waitingOn}` : outcome.state;
-  return `Filed in ${where}`;
+  return outcome.project === undefined ? `Filed in ${where}` : `Filed in ${where} under ${outcome.project}`;
 }
 
 export function Clarify({
@@ -190,10 +190,24 @@ export function Clarify({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [question, answer, back, skip, walking, onClose]);
 
+  // More than one step usually means the item *is* the project, so its name is offered
+  // as the project's, selected so that typing a different one replaces it. Going back
+  // to a text question brings back what was typed there.
+  const step = session?.step;
+  useEffect(() => {
+    if (session === undefined || task === undefined) return;
+    if (step === 'project') setText(session.answers.project ?? task.title);
+    else if (step === 'next-step') setText(session.answers.nextStep ?? '');
+    // Only on arriving at a step; the answers are read, not watched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, task]);
+
   const textQuestion = question !== undefined && question.choices.length === 0;
   useEffect(() => {
-    if (textQuestion) input.current?.focus();
-  }, [textQuestion, session?.step]);
+    if (!textQuestion) return;
+    input.current?.focus();
+    if (step === 'project') input.current?.select();
+  }, [textQuestion, step]);
 
   const suggestions = useMemo(() => {
     if (session?.step === 'project') return projects.map(project => project.title);
@@ -243,6 +257,11 @@ export function Clarify({
             </div>
 
             <div className="clarify-question">
+              {session?.step === 'next-step' && session.answers.project !== undefined && (
+                <p className="muted small">
+                  Project: <strong>{session.answers.project}</strong>
+                </p>
+              )}
               <h3>{question.prompt}</h3>
               {question.hint !== undefined && <p className="muted small">{question.hint}</p>}
 
@@ -300,7 +319,11 @@ export function Clarify({
                 ← Back <kbd>b</kbd>
               </button>
               {textQuestion && (
-                <button className="primary small" onClick={() => answer(text)} disabled={busy}>
+                <button
+                  className="primary small"
+                  onClick={() => answer(text)}
+                  disabled={busy || (session?.step === 'next-step' && text.trim().length === 0)}
+                >
                   Next ↵
                 </button>
               )}
