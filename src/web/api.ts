@@ -113,7 +113,15 @@ export const api = {
     call<TaskList>('GET', `/api/tasks?state=${state}&q=${encodeURIComponent(q)}`),
   show: (id: string) => call<{task: TaskJson}>('GET', ref(id)).then(r => r.task),
 
-  create: (input: {title: string; state: TaskState; tags?: string[]; project?: string}) =>
+  create: (input: {
+    title: string;
+    state: TaskState;
+    tags?: string[];
+    project?: string;
+    due?: string;
+    defer?: string;
+    waiting_on?: string;
+  }) =>
     call<{task: TaskJson}>('POST', '/api/tasks', input).then(r => r.task),
   move: (id: string, to: TaskState, note?: string) =>
     call<{task: TaskJson}>('POST', `${ref(id)}/move`, {to, ...(note ? {note} : {})}).then(r => r.task),
@@ -131,6 +139,8 @@ export const api = {
     call<{task?: TaskJson; deleted?: TaskJson}>('POST', `${ref(id)}/clarify`, {from, outcome}),
   projects: () => call<{projects: ProjectJson[]}>('GET', '/api/projects').then(r => r.projects),
   weekly: () => call<WeeklyPlan>('GET', '/api/weekly'),
+  /** Every tag in use, with how many tasks carry it. */
+  allTags: () => call<{tags: Array<{tag: string; count: number}>}>('GET', '/api/tags').then(r => r.tags),
   project: (ref: string) => call<ProjectDetail>('GET', `/api/projects/${encodeURIComponent(ref)}`),
   createProject: (title: string, outcome: string) =>
     call<{project: ProjectJson}>('POST', '/api/projects', {title, outcome}).then(r => r.project),

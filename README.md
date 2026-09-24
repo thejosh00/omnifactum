@@ -15,7 +15,7 @@ Each account is its own set of lists, so **work** and **home** never mix.
 **Contents**
 
 - [Install and run](#install-and-run) · [Your first five minutes](#your-first-five-minutes)
-- [The six lists](#the-six-lists) · [The web app](#the-web-app) · [Emptying the inbox](#emptying-the-inbox) · [The command line](#the-command-line)
+- [The six lists](#the-six-lists) · [The web app](#the-web-app) · [Capturing](#capturing) · [Emptying the inbox](#emptying-the-inbox) · [The command line](#the-command-line)
 - [Projects](#projects) · [The weekly review](#the-weekly-review)
 - [Working with AI agents](#working-with-ai-agents) · [Your data](#your-data)
 - [Questions](#questions) · [Development](#development)
@@ -138,8 +138,8 @@ it twice skips what is already there.
 
 ## Your first five minutes
 
-**Write something down.** In the web app, type into the capture box at the top — `#tags`
-and a `+project` are pulled out of the line — or from a terminal:
+**Write something down.** In the web app, type into the capture box at the top (see
+[Capturing](#capturing) for what it understands), or from a terminal:
 
 ```bash
 omni add "That thing Priya mentioned"
@@ -218,6 +218,33 @@ agent did without opening anything. **Accept** completes it; **Send back** retur
 `next` and asks why, so whoever picks it up next knows what was wrong.
 
 On a phone the lists and the task open full-screen, and the capture box sits at the top.
+
+### Capturing
+
+Press `c` and type. Anything captured plainly goes to the inbox, to be thought about
+later. When you already know where it belongs, say so in the same line:
+
+| In the line | Means |
+| --- | --- |
+| `#calls` | a tag; as many as you like |
+| `+kitchen` | the project it belongs to |
+| `>next`, `>someday`, `>done` | file it straight into that list |
+| `>waiting:Priya` | waiting, and on whom |
+| `due:fri` | due date: `today`, `tomorrow`, a weekday, `+3d`, `+2w`, `+1m`, or `2026-10-15` |
+| `defer:+2w` | hide it until then, in someday |
+
+```
+Call the bank about the overdraft #calls >next due:fri
+```
+
+A line under the box shows how it will be read — *Call the bank about the overdraft →
+next · due in 2d (25 Sep) · #calls* — before you press Enter. A weekday means the next one
+after today, so `fri` said on a Friday is a week away. Anything it cannot read, like
+`due:someday`, is shown in red and stops the capture instead of being guessed at.
+
+After `#`, `+`, `>` or `due:`, a menu offers your existing tags, projects, lists or dates;
+`Tab` or `Enter` takes one. The tag editor (`t`) and the clarify walk complete tags the same
+way.
 
 ### Emptying the inbox
 

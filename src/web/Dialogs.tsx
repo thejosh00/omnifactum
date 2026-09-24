@@ -4,12 +4,13 @@
  */
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {TASK_STATES, type TaskState} from '../core/types.ts';
+import {CompletingInput, menuOpen, type Suggest} from './Complete.tsx';
 import {BINDINGS, keyLabel} from './keys.ts';
 
 export function Modal({title, onClose, children}: {title: string; onClose: () => void; children: ReactNode}) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !menuOpen(event)) {
         event.stopPropagation();
         onClose();
       }
@@ -37,6 +38,8 @@ export interface PromptRequest {
   required?: string;
   submit: string;
   onSubmit: (value: string) => void;
+  /** Offer completions, which makes it a single line rather than a text box. */
+  suggest?: Suggest;
 }
 
 export function Prompt({request, onClose}: {request: PromptRequest; onClose: () => void}) {
@@ -63,6 +66,12 @@ export function Prompt({request, onClose}: {request: PromptRequest; onClose: () 
         }}
       >
         {request.label !== undefined && <label htmlFor="prompt-input">{request.label}</label>}
+        {request.suggest !== undefined ? (
+          <CompletingInput value={value} onChange={v => {
+            setValue(v);
+            setError(undefined);
+          }} onSubmit={submit} suggest={request.suggest} autoFocus ariaLabel={request.label ?? request.title} />
+        ) : (
         <textarea
           id="prompt-input"
           ref={input}
@@ -80,6 +89,7 @@ export function Prompt({request, onClose}: {request: PromptRequest; onClose: () 
             }
           }}
         />
+        )}
         {error !== undefined && <p className="field-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="quiet" onClick={onClose}>
@@ -199,6 +209,10 @@ export function Help({onClose}: {onClose: () => void}) {
           </section>
         ))}
       </div>
+      <p className="hint">
+        Capture: <code>#tag</code> <code>+project</code> <code>&gt;next</code> <code>&gt;waiting:sam</code>{' '}
+        <code>due:fri</code> <code>defer:+2w</code>. Tab completes.
+      </p>
       <p className="hint">
         Filters: <code>home errand</code> both, <code>home,errand</code> either, <code>-someday</code> not,{' '}
         <code>/printer</code> text, <code>due:today</code>, <code>is:overdue</code>.

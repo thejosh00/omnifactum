@@ -647,6 +647,10 @@ export async function handleApi(ctx: ApiContext, request: Request, url: URL): Pr
         return json(ok({at: plan.at, projects_stamped: stamped, needs_attention: plan.needingAttention}));
       }
     }
+    if (resource === 'tags' && ref === undefined && method === 'GET') {
+      const tags = storeFor(ctx).load().tags;
+      return json({ok: true, tags: tags.map(use => ({tag: use.tag, count: use.count}))});
+    }
     if (resource === 'agents' && method === 'GET') {
       return json({ok: true, contract: agentsDocument()});
     }

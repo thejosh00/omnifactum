@@ -10,7 +10,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {applyTagEdit, formatTags, parseCapture, parseTagEdit} from '../core/capture.ts';
 import {describeChange, type Change} from '../core/diff.ts';
-import {metaSegments} from '../core/format.ts';
+import {formatDue, metaSegments, shortDate} from '../core/format.ts';
 import {TASK_STATES, type TaskState} from '../core/types.ts';
 import {
   api,
@@ -24,6 +24,7 @@ import {
   type WeeklyPlan,
 } from './api.ts';
 import {Clarify} from './Clarify.tsx';
+import {captureSuggest, CompletingInput, tagSuggest, useVocabulary} from './Complete.tsx';
 import {NewProjectDialog, ProjectPanel, ProjectsView} from './Projects.tsx';
 import {WeeklyBanner} from './Weekly.tsx';
 import {Detail, type DetailActions} from './Detail.tsx';
@@ -210,6 +211,29 @@ function Row({
   );
 }
 
+/** How the capture line will be read, shown while you type it, so nothing is a surprise. */
+function CapturePreview({line, now}: {line: string; now: string}) {
+  const captured = parseCapture(line, now);
+  const bits: string[] = [`→ ${captured.state ?? 'inbox'}`];
+  if (captured.waitingOn !== undefined) bits.push(`on ${captured.waitingOn}`);
+  if (captured.due !== undefined) bits.push(`due ${formatDue(captured.due, now).text.replace(/^due /, '')} (${shortDate(captured.due)})`);
+  if (captured.defer !== undefined) bits.push(`hidden until ${shortDate(captured.defer)}`);
+  if (captured.project !== undefined) bits.push(`+${captured.project}`);
+  for (const tag of captured.tags) bits.push(`#${tag}`);
+
+  return (
+    <div className="capture-preview" aria-live="polite">
+      {captured.problems === undefined ? (
+        <span>
+          <strong>{captured.title}</strong> <span className="muted">{bits.join(' · ')}</span>
+        </span>
+      ) : (
+        <span className="field-error">{captured.problems.join(' · ')}</span>
+      )}
+    </div>
+  );
+}
+
 function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () => void}) {
   const now = useNow();
   const [list, setList] = useState<TaskState>(listFromHash);
@@ -221,6 +245,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   const [dialog, setDialog] = useState<Dialog>();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [capture, setCapture] = useState('');
+  const [captureFocused, setCaptureFocused] = useState(false);
   const [weekly, setWeekly] = useState<WeeklyPlan>();
   const [walk, setWalk] = useState<{index: number; recorded?: number}>();
   const [projectsView, setProjectsView] = useState(() => window.location.hash.replace(/^#\/?/, '') === 'projects');
@@ -251,6 +276,10 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
     setToasts(current => [...current.slice(-3), {id, text, tone}]);
     setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), tone === 'error' ? 8000 : 5000);
   }, []);
+
+  const vocabulary = useVocabulary(revision);
+  const captureSuggestions = useMemo(() => captureSuggest(vocabulary, now), [vocabulary, now]);
+  const tagSuggestions = useMemo(() => tagSuggest(vocabulary), [vocabulary]);
 
   const reload = useCallback(async () => {
     try {
@@ -400,6 +429,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
             title: 'Tags',
             label: 'Space-separated. -tag removes one.',
             initial: formatTags(task.tags),
+            suggest: tagSuggestions,
             submit: 'Save tags',
             onSubmit: line => {
               // Sent as additions and removals, so a tag an agent added meanwhile stays.
@@ -414,7 +444,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
       clarify: task => setDialog({kind: 'clarify', ids: [task.id], walking: false}),
       fail: message => toast(message, 'error'),
     }),
-    [act, toast],
+    [act, toast, tagSuggestions],
   );
 
   const moveTo = (task: TaskJson, to: TaskState) => {
@@ -437,18 +467,27 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   };
 
   const submitCapture = () => {
-    const captured = parseCapture(capture);
+    const captured = parseCapture(capture, new Date().toISOString());
+    if (captured.problems !== undefined) {
+      // The preview is already showing what is wrong; say it once more, and keep the line.
+      toast(captured.problems[0]!, 'error');
+      return;
+    }
     if (captured.title.length === 0) return;
+    const state = captured.state ?? 'inbox';
     setCapture('');
     void act(
       () =>
         api.create({
           title: captured.title,
-          state: 'inbox',
+          state,
           tags: captured.tags,
           ...(captured.project === undefined ? {} : {project: captured.project}),
+          ...(captured.due === undefined ? {} : {due: captured.due}),
+          ...(captured.defer === undefined ? {} : {defer: captured.defer}),
+          ...(captured.waitingOn === undefined ? {} : {waiting_on: captured.waitingOn}),
         }),
-      list === 'inbox' ? undefined : `Captured "${captured.title}" to the inbox`,
+      list === state && !projectsView ? undefined : `Captured "${captured.title}" to ${state}`,
     );
   };
 
@@ -600,13 +639,17 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
             submitCapture();
           }}
         >
-          <input
-            ref={captureInput}
+          <CompletingInput
+            inputRef={captureInput}
             value={capture}
-            placeholder="Capture…  #tag +project   (c)"
-            aria-label="Capture a task"
-            onChange={event => setCapture(event.target.value)}
+            onChange={setCapture}
+            onSubmit={submitCapture}
+            suggest={captureSuggestions}
+            placeholder="Capture…  #tag +project >next due:fri   (c)"
+            ariaLabel="Capture a task"
+            onFocusChange={setCaptureFocused}
           />
+          {capture.trim().length > 0 && captureFocused && <CapturePreview line={capture} now={now} />}
         </form>
         <button className="icon" onClick={() => setDialog({kind: 'help'})} aria-label="Keyboard help">
           ?
@@ -794,6 +837,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
       {dialog?.kind === 'clarify' && (
         <Clarify
           ids={dialog.ids}
+          tagSuggest={tagSuggestions}
           walking={dialog.walking}
           now={now}
           toast={toast}

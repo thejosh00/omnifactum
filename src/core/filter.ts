@@ -14,7 +14,7 @@
  */
 import {isDeferred, isDueBy, isOverdue} from './tickler.ts';
 import {normalizeTag} from './tags.ts';
-import {addLocalDays, localDate} from './time.ts';
+import {addLocalDays, localDate, startOfLocalDay} from './time.ts';
 import {isTaskState} from './types.ts';
 import type {Task} from './types.ts';
 
@@ -136,7 +136,25 @@ function parseField(field: string, value: string, warnings: string[]): Atom | un
   }
 }
 
-/** Resolve `today`, `tomorrow`, `+7d` and ISO dates into a local `YYYY-MM-DD`. */
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+/**
+ * A weekday name, full or abbreviated to three letters or more, as its index.
+ * `fri`, `frid` and `friday` all work; `f` and `fr` are too easily something else.
+ */
+export function weekdayIndex(word: string): number | undefined {
+  if (word.length < 3) return undefined;
+  const index = WEEKDAYS.findIndex(day => day.startsWith(word));
+  return index === -1 ? undefined : index;
+}
+
+/**
+ * Resolve `today`, `tomorrow`, `+7d`, a weekday and ISO dates into a local `YYYY-MM-DD`.
+ *
+ * A weekday means the next one *after* today: said on a Friday, `fri` is a week away,
+ * because if you meant today you would have said `today`. Anything that shows the
+ * resolved date back — the capture preview does — makes that visible before it matters.
+ */
 export function resolveDate(value: string, nowIso: string): string | undefined {
   const trimmed = value.trim().toLowerCase();
   const now = new Date(nowIso);
@@ -156,7 +174,13 @@ export function resolveDate(value: string, nowIso: string): string | undefined {
     return addLocalDays(today, sign * days);
   }
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const weekday = weekdayIndex(trimmed);
+  if (weekday !== undefined) {
+    const ahead = ((weekday - now.getDay() + 7) % 7) || 7;
+    return addLocalDays(today, ahead);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return startOfLocalDay(trimmed) === undefined ? undefined : trimmed;
   return undefined;
 }
 

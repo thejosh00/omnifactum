@@ -100,3 +100,14 @@ describe('projects over HTTP', () => {
     expect((await omni(['project', 'mv', 'kitchen', 'done', '--yes'], {dir: v.dir, now: NOW})).code).toBe(0);
   });
 });
+
+describe('tags over HTTP, for autocomplete', () => {
+  test('every tag in use comes back with its count', async () => {
+    const {v, call} = setup();
+    await omni(['add', 'Call the bank', '-t', 'calls'], {dir: v.dir, now: NOW});
+    await omni(['add', 'Call Sam', '-t', 'calls,work'], {dir: v.dir, now: NOW});
+    const tags = (await call('GET', '/api/tags')).body['tags'] as Array<{tag: string; count: number}>;
+    expect(tags.find(t => t.tag === 'calls')?.count).toBe(2);
+    expect(tags.find(t => t.tag === 'work')?.count).toBe(1);
+  });
+});

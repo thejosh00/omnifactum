@@ -1001,3 +1001,55 @@ button.link:hover {
 .modal label.spaced {
   margin-top: 12px;
 }
+
+/* --- completion and capture preview -------------------------------------------- */
+
+.completing {
+  position: relative;
+}
+.suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 25;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.suggestions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.suggestions li.active {
+  background: var(--accent-soft);
+}
+.capture {
+  position: relative;
+}
+.capture-preview {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.completing:has(.suggestions) + .capture-preview {
+  display: none;
+}

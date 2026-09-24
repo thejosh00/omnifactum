@@ -21,6 +21,7 @@ import {
 import {timeAgo} from '../core/format.ts';
 import type {TaskState} from '../core/types.ts';
 import {api, ApiError, type ProjectJson, type TaskJson} from './api.ts';
+import {CompletingInput, menuOpen, type Suggest} from './Complete.tsx';
 
 interface Tally {
   filed: number;
@@ -41,6 +42,7 @@ export function Clarify({
   onFiled,
   onClose,
   toast,
+  tagSuggest,
 }: {
   /** The items to walk, in order. */
   ids: string[];
@@ -50,6 +52,8 @@ export function Clarify({
   onFiled: () => void;
   onClose: () => void;
   toast: (text: string, tone?: 'info' | 'error') => void;
+  /** Completes tags at the "where can it be done?" question. */
+  tagSuggest?: Suggest;
 }) {
   const [position, setPosition] = useState(0);
   const [task, setTask] = useState<TaskJson>();
@@ -160,7 +164,7 @@ export function Clarify({
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const typing = event.target instanceof HTMLInputElement;
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !menuOpen(event)) {
         event.preventDefault();
         event.stopPropagation();
         onClose();
@@ -257,14 +261,26 @@ export function Clarify({
                     answer(text);
                   }}
                 >
-                  <input
-                    ref={input}
-                    value={text}
-                    placeholder={question.placeholder}
-                    list={suggestions.length > 0 ? 'clarify-suggestions' : undefined}
-                    disabled={busy}
-                    onChange={event => setText(event.target.value)}
-                  />
+                  {session?.step === 'tags' && tagSuggest !== undefined ? (
+                    <CompletingInput
+                      inputRef={input}
+                      value={text}
+                      onChange={setText}
+                      onSubmit={() => answer(text)}
+                      suggest={tagSuggest}
+                      placeholder={question.placeholder}
+                      disabled={busy}
+                    />
+                  ) : (
+                    <input
+                      ref={input}
+                      value={text}
+                      placeholder={question.placeholder}
+                      list={suggestions.length > 0 ? 'clarify-suggestions' : undefined}
+                      disabled={busy}
+                      onChange={event => setText(event.target.value)}
+                    />
+                  )}
                   {suggestions.length > 0 && (
                     <datalist id="clarify-suggestions">
                       {suggestions.map(value => (

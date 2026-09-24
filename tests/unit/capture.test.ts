@@ -4,6 +4,7 @@ import {
   formatTags,
   parseCapture,
   completeLastWord,
+  completing,
   parseTagEdit,
 } from '../../src/core/capture.ts';
 
@@ -126,5 +127,75 @@ describe('tab completion in the filter bar', () => {
 
   test('an already-complete word is left alone rather than looping', () => {
     expect(completeLastWord('home', ['home', 'homework'])).toBeUndefined();
+  });
+});
+
+describe('capturing straight into a list, with dates', () => {
+  // A Wednesday, 9am in Chicago (the suite's time zone).
+  const WEDNESDAY = '2026-09-23T14:00:00Z';
+
+  test('a list, a due date and tags come out of the line; the rest is the title', () => {
+    expect(parseCapture('Call the bank #calls >next due:fri', WEDNESDAY)).toEqual({
+      title: 'Call the bank',
+      tags: ['calls'],
+      state: 'next',
+      due: '2026-09-25',
+    });
+  });
+
+  test('a weekday is the next one after today, never today itself', () => {
+    expect(parseCapture('x due:wed', WEDNESDAY).due).toBe('2026-09-30');
+    expect(parseCapture('x due:thursday', WEDNESDAY).due).toBe('2026-09-24');
+    expect(parseCapture('x due:today', WEDNESDAY).due).toBe('2026-09-23');
+    expect(parseCapture('x due:+2w', WEDNESDAY).due).toBe('2026-10-07');
+    expect(parseCapture('x due:2026-10-15', WEDNESDAY).due).toBe('2026-10-15');
+  });
+
+  test('waiting can say on whom', () => {
+    expect(parseCapture('Get the contract back >waiting:Priya', WEDNESDAY)).toMatchObject({
+      title: 'Get the contract back',
+      state: 'waiting',
+      waitingOn: 'Priya',
+    });
+  });
+
+  test('a defer date means someday, and clashes with any other list', () => {
+    expect(parseCapture('Learn Rust defer:+1m', WEDNESDAY)).toMatchObject({state: 'someday', defer: '2026-10-23'});
+    expect(parseCapture('Learn Rust >next defer:+1m', WEDNESDAY).problems).toEqual([
+      'a defer date only goes with >someday, not >next',
+    ]);
+  });
+
+  test('nothing is taken that was not exactly a token', () => {
+    expect(parseCapture('Compare A > B, ratio 3:2', WEDNESDAY)).toEqual({title: 'Compare A > B, ratio 3:2', tags: []});
+    expect(parseCapture('Rename the >foo widget', WEDNESDAY)).toEqual({title: 'Rename the >foo widget', tags: []});
+  });
+
+  test('what looks meant but cannot be read is a problem, not a guess', () => {
+    expect(parseCapture('Pay rent due:someday', WEDNESDAY).problems?.[0]).toContain('"someday" is not a date');
+    expect(parseCapture('Pay rent >nex', WEDNESDAY).problems).toEqual(['">nex" — did you mean >next?']);
+    expect(parseCapture('Pay rent >review', WEDNESDAY).problems).toBeUndefined();
+    expect(parseCapture('#calls >next', WEDNESDAY).problems).toEqual([
+      'there is no title left once the tokens are taken out',
+    ]);
+  });
+
+  test('without a clock, dates are problems rather than guesses', () => {
+    expect(parseCapture('Pay rent due:fri').problems?.[0]).toContain('is not a date');
+  });
+});
+
+describe('what the last word wants completing as', () => {
+  test('each marker asks for its own kind of thing', () => {
+    expect(completing('Call Sam #ca')).toEqual({kind: 'tag', partial: 'ca', start: 10});
+    expect(completing('Order tiles +kit')).toMatchObject({kind: 'project', partial: 'kit'});
+    expect(completing('Order tiles >')).toMatchObject({kind: 'list', partial: ''});
+    expect(completing('Pay rent due:fr')).toMatchObject({kind: 'date', partial: 'fr'});
+  });
+
+  test('a finished word, or plain text, asks for nothing', () => {
+    expect(completing('Call Sam #calls ')).toBeUndefined();
+    expect(completing('Call Sam')).toBeUndefined();
+    expect(completing('email a#b')).toBeUndefined();
   });
 });
