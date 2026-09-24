@@ -34,11 +34,13 @@ export interface TaskList {
 export interface ChangeEvent {
   seq: number;
   at: string;
+  /** Whether a task or a project changed. */
+  entity: 'task' | 'project';
   kind: 'completed' | 'added' | 'moved' | 'edited' | 'removed';
   id: string;
   title: string;
-  from?: TaskState;
-  to?: TaskState;
+  from?: string;
+  to?: string;
   actor?: string;
   note?: string;
 }
@@ -59,6 +61,15 @@ export interface WeeklyPlan {
   needs_attention: number;
   steps: WeeklyStep[];
 }
+
+export interface ProjectDetail {
+  project: ProjectJson;
+  body: string;
+  log: Array<{at: string; actor: string; text: string}>;
+  tasks: TaskJson[];
+}
+
+export type ProjectState = 'active' | 'someday' | 'done';
 
 export class ApiError extends Error {
   constructor(
@@ -120,6 +131,19 @@ export const api = {
     call<{task?: TaskJson; deleted?: TaskJson}>('POST', `${ref(id)}/clarify`, {from, outcome}),
   projects: () => call<{projects: ProjectJson[]}>('GET', '/api/projects').then(r => r.projects),
   weekly: () => call<WeeklyPlan>('GET', '/api/weekly'),
+  project: (ref: string) => call<ProjectDetail>('GET', `/api/projects/${encodeURIComponent(ref)}`),
+  createProject: (title: string, outcome: string) =>
+    call<{project: ProjectJson}>('POST', '/api/projects', {title, outcome}).then(r => r.project),
+  /** Replace fields. Refused with a 409 `ApiError` carrying the current project if it moved past `version`. */
+  patchProject: (ref: string, version: number, fields: Record<string, string | null>) =>
+    call<{project: ProjectJson}>('PATCH', `/api/projects/${encodeURIComponent(ref)}`, fields, {'if-match': String(version)}).then(
+      r => r.project,
+    ),
+  renameProject: (ref: string, title: string) =>
+    call<{project: ProjectJson; repointed: number}>('POST', `/api/projects/${encodeURIComponent(ref)}/rename`, {title}),
+  /** Refused with a 409 carrying `open` tasks when finishing a project that still has some. */
+  moveProject: (ref: string, to: ProjectState, force = false) =>
+    call<{project: ProjectJson}>('POST', `/api/projects/${encodeURIComponent(ref)}/move`, {to, force}).then(r => r.project),
   recordWeekly: () => call<{projects_stamped: number; needs_attention: number}>('POST', '/api/weekly/record'),
 };
 

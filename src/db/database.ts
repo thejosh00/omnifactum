@@ -123,6 +123,10 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX events_by_account ON events(account_id, seq);
   `,
+  // Projects are announced too, so a project an agent creates appears in open browsers.
+  `
+  ALTER TABLE events ADD COLUMN entity TEXT NOT NULL DEFAULT 'task';
+  `,
 ];
 
 export interface OpenOptions {

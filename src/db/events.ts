@@ -11,12 +11,16 @@
  */
 import type {Database} from 'bun:sqlite';
 import type {Change, ChangeKind} from '../core/diff.ts';
-import type {TaskState} from '../core/types.ts';
+import type {ProjectState, TaskState} from '../core/types.ts';
+
+export type EventEntity = 'task' | 'project';
 
 export interface StoredEvent {
   seq: number;
   accountId: number;
   at: string;
+  /** What changed: a task, or a project. `change.id` is that thing's id. */
+  entity: EventEntity;
   change: Change;
 }
 
@@ -56,15 +60,16 @@ interface EventRow {
   to_state: string | null;
   actor: string | null;
   note: string | null;
+  entity: string;
 }
 
 function toEvent(row: EventRow): StoredEvent {
   const change: Change = {kind: row.kind as ChangeKind, id: row.task_id, title: row.title};
-  if (row.from_state !== null) change.from = row.from_state as TaskState;
-  if (row.to_state !== null) change.to = row.to_state as TaskState;
+  if (row.from_state !== null) change.from = row.from_state as TaskState | ProjectState;
+  if (row.to_state !== null) change.to = row.to_state as TaskState | ProjectState;
   if (row.actor !== null) change.actor = row.actor;
   if (row.note !== null) change.note = row.note;
-  return {seq: row.seq, accountId: row.account_id, at: row.at, change};
+  return {seq: row.seq, accountId: row.account_id, at: row.at, entity: row.entity === 'project' ? 'project' : 'task', change};
 }
 
 /** Events after `seq`, oldest first, for a client catching up. */
@@ -88,6 +93,7 @@ export function eventToJson(event: StoredEvent): Record<string, unknown> {
   const out: Record<string, unknown> = {
     seq: event.seq,
     at: event.at,
+    entity: event.entity,
     kind: change.kind,
     id: change.id,
     title: change.title,

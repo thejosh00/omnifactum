@@ -31,7 +31,7 @@ import {resolveProjectRef} from '../core/project.ts';
 import {failure, ok, projectToJson, taskToJson} from '../core/serialize.ts';
 import {countsByState, type Snapshot} from '../core/snapshot.ts';
 import {normalizeTag} from '../core/tags.ts';
-import {isTaskState, taskStateList, TASK_STATES, type Task, type TaskFile, type TaskState} from '../core/types.ts';
+import {isProjectState, isTaskState, taskStateList, TASK_STATES, type Task, type TaskFile, type TaskState} from '../core/types.ts';
 import {agentsDocument} from '../core/agentsDoc.ts';
 import {applyClarify, type ClarifyOutcome} from '../core/clarify.ts';
 import {
@@ -44,6 +44,15 @@ import {
 import {runCommand} from '../commands/run.ts';
 import {isBusy} from '../db/busy.ts';
 import {latestEventSeq, type EventHub} from '../db/events.ts';
+import {
+  createProject,
+  editProject,
+  moveProject,
+  ProjectError,
+  projectJson,
+  renameProject,
+  requireProject,
+} from '../db/projects.ts';
 import {Store, type Updated} from '../db/store.ts';
 import {planToJson, recordWeekly, weeklyState} from '../db/weekly.ts';
 import type {Caller} from '../db/auth.ts';
@@ -464,22 +473,110 @@ function listProjects(ctx: ApiContext): Response {
 }
 
 function showProject(ctx: ApiContext, ref: string): Response {
-  const snapshot = storeFor(ctx).load();
-  const match = resolveProjectRef(snapshot.projects, decodeURIComponent(ref));
-  if (match.kind !== 'ok') {
-    throw new ApiError(
-      match.kind === 'ambiguous' ? `"${ref}" matches more than one project` : `no project matches "${ref}"`,
-      EXIT_NOT_FOUND,
-      match.kind === 'ambiguous' ? 409 : 404,
+  const store = storeFor(ctx);
+  return projecting(() => {
+    const snapshot = store.load();
+    const file = requireProject(snapshot, decodeURIComponent(ref));
+    const entry = snapshot.membership.projects.find(e => e.project.project.id === file.project.id);
+    return json(
+      ok({
+        project: projectToJson(file, {liveActions: entry?.live.length ?? 0, stalled: entry?.stalled ?? false}),
+        body: file.project.body,
+        log: file.project.log.map(e => ({at: e.at, actor: e.actor, text: e.text})),
+        tasks: (entry?.tasks ?? []).map(taskToJson),
+      }),
     );
+  });
+}
+
+/** What the shared project module refused, as an HTTP answer. */
+function projectFailure(error: ProjectError): ApiError {
+  switch (error.kind) {
+    case 'not-found':
+      return new ApiError(error.message, EXIT_NOT_FOUND, 404);
+    case 'ambiguous':
+      return new ApiError(error.message, EXIT_NOT_FOUND, 409, {
+        candidates: (error.detail.candidates ?? []).map(f => `${f.stem}  ${f.project.title}`),
+      });
+    case 'open-actions':
+      return new ApiError(error.message, EXIT_USAGE, 409, {open: (error.detail.open ?? []).map(taskToJson)});
+    case 'stale':
+      return new ApiError(error.message, EXIT_BUSY, 409, {
+        ...(error.detail.current === undefined ? {} : {project: projectToJson(error.detail.current, {liveActions: 0, stalled: false})}),
+      });
+    default:
+      return usage(error.message);
   }
-  const entry = snapshot.membership.projects.find(e => e.project.project.id === match.project.project.id);
-  return json(
-    ok({
-      project: projectToJson(match.project, {liveActions: entry?.live.length ?? 0, stalled: entry?.stalled ?? false}),
-      tasks: (entry?.tasks ?? []).map(taskToJson),
-    }),
-  );
+}
+
+function projecting(run: () => Response): Response {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof ProjectError) throw projectFailure(error);
+    throw error;
+  }
+}
+
+async function createProjectRoute(ctx: ApiContext, request: Request): Promise<Response> {
+  const input = await body(request);
+  const store = storeFor(ctx);
+  const due = stringField(input, 'due');
+  return projecting(() => {
+    const file = createProject(store, {
+      title: stringField(input, 'title') ?? '',
+      outcome: stringField(input, 'outcome') ?? '',
+      nowIso: ctx.now(),
+      tags: stringList(input, 'tags').map(normalizeTag),
+      ...(due === undefined || due === '' ? {} : {due}),
+    });
+    return json(ok({project: projectJson(store, file)}), 201);
+  });
+}
+
+async function patchProject(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
+  const input = await body(request);
+  const version = expectedVersion(request, input);
+  const store = storeFor(ctx);
+  const outcome = stringField(input, 'outcome');
+  const text = stringField(input, 'body');
+  const due = clearableField(input, 'due');
+  return projecting(() => {
+    const file = editProject(store, decodeURIComponent(ref), version, {
+      ...(outcome === undefined ? {} : {outcome}),
+      ...(text === undefined ? {} : {body: text}),
+      ...(due === undefined ? {} : {due}),
+    });
+    return json(ok({project: projectJson(store, file)}));
+  });
+}
+
+async function renameProjectRoute(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
+  const input = await body(request);
+  const title = stringField(input, 'title')?.trim() ?? '';
+  if (title.length === 0) throw usage('a project needs a title');
+  const store = storeFor(ctx);
+  return projecting(() => {
+    const {file, previousStem, repointed} = renameProject(store, decodeURIComponent(ref), title);
+    return json(ok({project: projectJson(store, file), previous_stem: previousStem, repointed}));
+  });
+}
+
+async function moveProjectRoute(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
+  const input = await body(request);
+  const to = stringField(input, 'to');
+  if (to === undefined || !isProjectState(to)) throw usage('"to" must be one of active, someday, done');
+  const note = stringField(input, 'note');
+  const store = storeFor(ctx);
+  return projecting(() => {
+    const file = moveProject(store, decodeURIComponent(ref), to, {
+      nowIso: ctx.now(),
+      actor: ctx.caller.actor,
+      force: input['force'] === true,
+      ...(note === undefined || note.trim() === '' ? {} : {note}),
+    });
+    return json(ok({project: projectJson(store, file)}));
+  });
 }
 
 async function cli(ctx: ApiContext, request: Request): Promise<Response> {
@@ -528,8 +625,17 @@ export async function handleApi(ctx: ApiContext, request: Request, url: URL): Pr
         }
       }
     }
-    if (resource === 'projects' && method === 'GET') {
-      return ref === undefined ? listProjects(ctx) : showProject(ctx, ref);
+    if (resource === 'projects') {
+      if (ref === undefined) {
+        if (method === 'GET') return listProjects(ctx);
+        if (method === 'POST') return await createProjectRoute(ctx, request);
+      } else if (action === undefined) {
+        if (method === 'GET') return showProject(ctx, ref);
+        if (method === 'PATCH') return await patchProject(ctx, ref, request);
+      } else if (method === 'POST') {
+        if (action === 'rename') return await renameProjectRoute(ctx, ref, request);
+        if (action === 'move') return await moveProjectRoute(ctx, ref, request);
+      }
     }
     if (resource === 'weekly') {
       const store = storeFor(ctx);

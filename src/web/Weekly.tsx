@@ -7,11 +7,9 @@
  * not cost you your place. The plan is re-read after every change, so a step you have just
  * cleared says so.
  *
- * The projects step has no list of tasks to show, so it gets a list of projects instead.
+ * The projects step has no list of tasks to show, so it shows the active projects instead.
  */
-import {useEffect, useState} from 'react';
-import {timeAgo} from '../core/format.ts';
-import {api, type ProjectJson, type WeeklyPlan} from './api.ts';
+import type {WeeklyPlan} from './api.ts';
 
 export function WeeklyBanner({
   plan,
@@ -116,51 +114,5 @@ export function WeeklyBanner({
         )}
       </footer>
     </section>
-  );
-}
-
-/** Active projects, for the step that asks whether each one is moving. */
-export function ProjectsPanel({now, revision}: {now: string; revision: number}) {
-  const [projects, setProjects] = useState<ProjectJson[]>();
-
-  useEffect(() => {
-    api.projects().then(
-      list => setProjects(list.filter(project => project.state === 'active')),
-      () => setProjects([]),
-    );
-  }, [revision]);
-
-  if (projects === undefined) return null;
-  if (projects.length === 0) {
-    return <p className="empty">No active projects. Anything that takes more than one action could be one.</p>;
-  }
-
-  return (
-    <ul className="rows projects">
-      {projects.map(project => (
-        <li key={project.id} className="row project-row">
-          <span className="row-title">
-            {project.title}
-            {project.outcome.trim().length > 0 ? (
-              <span className="project-outcome"> — {project.outcome}</span>
-            ) : (
-              <span className="project-outcome warn"> — no outcome yet</span>
-            )}
-          </span>
-          <span className="row-meta">
-            {project.stalled ? (
-              <span className="meta stalled">stalled</span>
-            ) : (
-              <span className="meta">
-                {project.live_actions} live action{project.live_actions === 1 ? '' : 's'}
-              </span>
-            )}
-            <span className="meta">
-              {project.reviewed === undefined ? 'never reviewed' : `reviewed ${timeAgo(project.reviewed, now)}`}
-            </span>
-          </span>
-        </li>
-      ))}
-    </ul>
   );
 }

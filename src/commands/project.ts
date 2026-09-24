@@ -6,15 +6,15 @@
  * the ability to notice when nothing is moving it forward.
  */
 import {flagList, flagValue, hasFlag} from '../core/args.ts';
+import {resolveProjectRef, writeProject} from '../core/project.ts';
 import {
-  planCompleteProject,
-  planMoveProject,
-  planNewProject,
-  planRenameProject,
-  planSetOutcome,
-  resolveProjectRef,
-  writeProject,
-} from '../core/project.ts';
+  createProject,
+  moveProject as moveSharedProject,
+  ProjectError,
+  projectJson,
+  renameProject as renameSharedProject,
+  setOutcome as setSharedOutcome,
+} from '../db/projects.ts';
 import {pluralize, shortId} from '../core/render.ts';
 import {projectToJson, taskToJson} from '../core/serialize.ts';
 import {membershipFor} from '../core/snapshot.ts';
@@ -22,9 +22,9 @@ import {stalledProjects} from '../core/stalled.ts';
 import {isProjectState} from '../core/types.ts';
 import type {ProjectMembership} from '../core/stalled.ts';
 import type {Snapshot} from '../core/snapshot.ts';
-import type {ProjectFile} from '../core/types.ts';
+import type {ProjectFile, ProjectState} from '../core/types.ts';
 import {
-  EXIT_ERROR,
+  EXIT_BUSY,
   EXIT_NOT_FOUND,
   EXIT_USAGE,
   emit,
@@ -96,31 +96,6 @@ function findProject(
   return {code: fail(ctx, `no project matches "${ref}"`, EXIT_NOT_FOUND)};
 }
 
-/**
- * Resolve a project reference and change it, both inside one lock.
- *
- * The same rule `withTask` enforces for tasks, and it is not theoretical here either: a
- * project being completed is moved from `projects/active/` into `projects/done/YYYY-MM/`,
- * so a scan that has already walked the first directory and not yet reached the second
- * misses it entirely. Resolving outside the lock therefore fails to find a project that
- * certainly exists, and does it only under the concurrency the lock was added for.
- *
- * The snapshot the reference was resolved against is handed on, so a caller that also
- * needs the project's membership does not pay for a second scan.
- */
-function withProject(
-  ctx: CommandContext,
-  ref: string,
-  run: (file: ProjectFile, snapshot: Snapshot) => number,
-): number {
-  return ctx.store.batch(() => {
-    const snapshot = ctx.store.load();
-    const found = findProject(ctx, snapshot, ref);
-    if (!('file' in found)) return found.code;
-    return run(found.file, snapshot);
-  });
-}
-
 function listProjects(ctx: CommandContext): number {
   const snapshot = loadWorld(ctx);
   const onlyStalled = hasFlag(ctx.args, 'stalled');
@@ -174,34 +149,19 @@ function newProject(ctx: CommandContext): number {
     });
   }
 
-  return runWrite(ctx, () => {
-    let planned;
-    try {
-      planned = planNewProject({
-        id: ctx.store.mintId(),
-        title,
-        outcome,
-        nowIso: ctx.now(),
-        tags: flagList(ctx.args, 'tag'),
-        ...(flagValue(ctx.args, 'due') === undefined ? {} : {due: flagValue(ctx.args, 'due')!}),
-      });
-    } catch (error) {
-      return fail(ctx, error instanceof Error ? error.message : String(error), EXIT_USAGE);
-    }
-
-    const result = ctx.store.createProjectSafely(planned);
-    if (result.kind !== 'ok') {
-      return fail(ctx, result.kind === 'failed' ? result.reason : 'could not create', EXIT_ERROR);
-    }
-
-    return emitOk(
-      ctx,
-      {project: projectToJson(result.file, {liveActions: 0, stalled: true})},
-      () => [
-        `${result.file.stem}  ${result.file.project.title}`,
-        `add actions with:  omni add "the next step" -p ${result.file.stem} --next`,
-      ],
-    );
+  const due = flagValue(ctx.args, 'due');
+  return changing(ctx, () => {
+    const file = createProject(ctx.store, {
+      title,
+      outcome,
+      nowIso: ctx.now(),
+      tags: flagList(ctx.args, 'tag'),
+      ...(due === undefined ? {} : {due}),
+    });
+    return emitOk(ctx, {project: projectJson(ctx.store, file)}, () => [
+      `${file.stem}  ${file.project.title}`,
+      `add actions with:  omni add "the next step" -p ${file.stem} --next`,
+    ]);
   });
 }
 
@@ -239,13 +199,6 @@ function showProject(ctx: CommandContext): number {
   );
 }
 
-/**
- * Renaming is the one operation that has to reach outside the project's own file.
- *
- * Tasks refer to a project by its filename stem, so a rename rewrites every member in
- * one pass and records the old stem as an alias. The whole thing runs under a single
- * lock, so no agent can see the project renamed but its tasks not yet repointed.
- */
 function renameProject(ctx: CommandContext): number {
   const [ref, ...titleParts] = ctx.args.positional;
   const title = titleParts.join(' ').trim();
@@ -254,49 +207,22 @@ function renameProject(ctx: CommandContext): number {
   }
 
   loadWorld(ctx);
-
-  return runWrite(ctx, () =>
-    withProject(ctx, ref, (current, snapshot) => {
-      const previousStem = current.stem;
-      const members = membershipFor(snapshot, current.project.id)?.tasks ?? [];
-
-      const renamed = ctx.store.updateProject(current.project.id, project =>
-        planRenameProject(project, previousStem, title),
-      );
-      if (renamed.kind !== 'ok') {
-        return fail(ctx, renamed.kind === 'failed' ? renamed.reason : 'gone', EXIT_ERROR);
-      }
-
-      let repointed = 0;
-      if (renamed.file.stem !== previousStem) {
-        for (const member of members) {
-          const result = ctx.store.updateTask(member.task.id, task => ({
-            ...task,
-            project: renamed.file.stem,
-          }));
-          if (result.kind === 'ok') repointed += 1;
-        }
-      }
-
-      return emitOk(
-        ctx,
-        {
-          project: projectToJson(renamed.file, {liveActions: 0, stalled: false}),
-          previous_stem: previousStem,
-          repointed,
-        },
-        () => {
-          const lines = [
-            renamed.file.stem === previousStem
-              ? `${renamed.file.stem}  ${renamed.file.project.title}`
-              : `${previousStem} -> ${renamed.file.stem}  ${renamed.file.project.title}`,
-          ];
-          if (repointed > 0) lines.push(`repointed ${pluralize(repointed, 'task')}`);
-          return lines;
-        },
-      );
-    }),
-  );
+  return changing(ctx, () => {
+    const {file, previousStem, repointed} = renameSharedProject(ctx.store, ref, title);
+    return emitOk(
+      ctx,
+      {project: projectJson(ctx.store, file), previous_stem: previousStem, repointed},
+      () => {
+        const lines = [
+          file.stem === previousStem
+            ? `${file.stem}  ${file.project.title}`
+            : `${previousStem} -> ${file.stem}  ${file.project.title}`,
+        ];
+        if (repointed > 0) lines.push(`repointed ${pluralize(repointed, 'task')}`);
+        return lines;
+      },
+    );
+  });
 }
 
 function setOutcome(ctx: CommandContext): number {
@@ -307,22 +233,10 @@ function setOutcome(ctx: CommandContext): number {
   }
 
   loadWorld(ctx);
-
-  return runWrite(ctx, () =>
-    withProject(ctx, ref, file => {
-      const result = ctx.store.updateProject(file.project.id, project =>
-        planSetOutcome(project, outcome),
-      );
-      if (result.kind !== 'ok') {
-        return fail(ctx, result.kind === 'failed' ? result.reason : 'gone', EXIT_ERROR);
-      }
-      return emitOk(
-        ctx,
-        {project: projectToJson(result.file, {liveActions: 0, stalled: false})},
-        () => `${result.file.stem}  ${result.file.project.outcome}`,
-      );
-    }),
-  );
+  return changing(ctx, () => {
+    const file = setSharedOutcome(ctx.store, ref, outcome);
+    return emitOk(ctx, {project: projectJson(ctx.store, file)}, () => `${file.stem}  ${file.project.outcome}`);
+  });
 }
 
 function completeProject(ctx: CommandContext): number {
@@ -330,41 +244,7 @@ function completeProject(ctx: CommandContext): number {
   if (ref === undefined) {
     return fail(ctx, 'usage: omni project done <project> [--note "..."]', EXIT_USAGE);
   }
-
-  loadWorld(ctx);
-  const note = flagValue(ctx.args, 'note');
-
-  return runWrite(ctx, () =>
-    withProject(ctx, ref, (file, snapshot) => {
-      // Counted from the same snapshot the reference resolved against, inside the lock,
-      // so nobody can finish the last open action between the check and the write.
-      const entry = membershipFor(snapshot, file.project.id);
-      const open = entry?.tasks.filter(t => t.task.state !== 'done') ?? [];
-      if (open.length > 0 && !hasFlag(ctx.args, 'yes')) {
-        return fail(
-          ctx,
-          `${file.project.title} still has ${pluralize(open.length, 'open action')}`,
-          EXIT_USAGE,
-          {
-            open: open.map(t => `${t.task.state.padEnd(7)}  ${t.task.title}`),
-            hint: 'finish or drop them first, or re-run with --yes',
-          },
-        );
-      }
-
-      const result = ctx.store.updateProject(file.project.id, project =>
-        planCompleteProject(project, {nowIso: ctx.now(), ...(note === undefined ? {} : {note})}),
-      );
-      if (result.kind !== 'ok') {
-        return fail(ctx, result.kind === 'failed' ? result.reason : 'gone', EXIT_ERROR);
-      }
-      return emitOk(
-        ctx,
-        {project: projectToJson(result.file, {liveActions: 0, stalled: false})},
-        () => `done: ${result.file.project.title}`,
-      );
-    }),
-  );
+  return move(ctx, ref, 'done');
 }
 
 function moveProject(ctx: CommandContext): number {
@@ -375,22 +255,50 @@ function moveProject(ctx: CommandContext): number {
   if (!isProjectState(target)) {
     return fail(ctx, `"${target}" is not a project state`, EXIT_USAGE);
   }
+  return move(ctx, ref, target);
+}
 
+/** `done` and `mv` share one path, so finishing a project checks its open actions either way. */
+function move(ctx: CommandContext, ref: string, to: ProjectState): number {
   loadWorld(ctx);
+  const note = flagValue(ctx.args, 'note');
+  return changing(ctx, () => {
+    const file = moveSharedProject(ctx.store, ref, to, {
+      nowIso: ctx.now(),
+      actor: ctx.store.actor,
+      force: hasFlag(ctx.args, 'yes'),
+      ...(note === undefined ? {} : {note}),
+    });
+    return emitOk(ctx, {project: projectJson(ctx.store, file)}, () =>
+      to === 'done' ? `done: ${file.project.title}` : `${file.stem}  ${file.project.title}  (${file.project.state})`,
+    );
+  });
+}
 
-  return runWrite(ctx, () =>
-    withProject(ctx, ref, file => {
-      const result = ctx.store.updateProject(file.project.id, project =>
-        planMoveProject(project, target, {nowIso: ctx.now()}),
-      );
-      if (result.kind !== 'ok') {
-        return fail(ctx, result.kind === 'failed' ? result.reason : 'gone', EXIT_ERROR);
+/** Run a project change, turning what the shared module refuses into the CLI's exit codes. */
+function changing(ctx: CommandContext, action: () => number): number {
+  return runWrite(ctx, () => {
+    try {
+      return action();
+    } catch (error) {
+      if (!(error instanceof ProjectError)) throw error;
+      switch (error.kind) {
+        case 'not-found':
+          return fail(ctx, error.message, EXIT_NOT_FOUND);
+        case 'ambiguous':
+          return fail(ctx, error.message, EXIT_NOT_FOUND, {
+            candidates: (error.detail.candidates ?? []).map(f => `${f.stem}  ${f.project.title}`),
+          });
+        case 'open-actions':
+          return fail(ctx, error.message, EXIT_USAGE, {
+            open: (error.detail.open ?? []).map(t => `${t.task.state.padEnd(7)}  ${t.task.title}`),
+            hint: 'finish or drop them first, or re-run with --yes',
+          });
+        case 'stale':
+          return fail(ctx, error.message, EXIT_BUSY);
+        default:
+          return fail(ctx, error.message, EXIT_USAGE);
       }
-      return emitOk(
-        ctx,
-        {project: projectToJson(result.file, {liveActions: 0, stalled: false})},
-        () => `${result.file.stem}  ${result.file.project.title}  (${result.file.project.state})`,
-      );
-    }),
-  );
+    }
+  });
 }

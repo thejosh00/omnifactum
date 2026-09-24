@@ -4,6 +4,7 @@ import {EventHub, eventsSince, type StoredEvent} from '../../src/db/events.ts';
 import {Store} from '../../src/db/store.ts';
 import {sweepTickler} from '../../src/db/tickler.ts';
 import {planAddTags, planComplete, planMove, planNewTask, planNote, planSetTitle} from '../../src/core/mutation.ts';
+import {planMoveProject, planNewProject} from '../../src/core/project.ts';
 
 const NOW = '2026-09-23T10:00:00Z';
 
@@ -136,6 +137,24 @@ describe('the database store', () => {
     ]);
     // And it is there for a browser that reconnects later.
     expect(eventsSince(db, work.id, heard[0]!.seq).map(e => e.change.kind)).toEqual(['moved']);
+  });
+
+  test('project changes are announced too, marked as projects', () => {
+    const {store, hub, work} = setup();
+    const heard: StoredEvent[] = [];
+    hub.subscribe(work.id, event => heard.push(event));
+    const s = store(undefined, 'agent:planner');
+
+    const created = s.createProjectSafely(
+      planNewProject({id: s.mintId(), title: 'Kitchen', outcome: 'Cooking in it', nowIso: NOW}),
+    );
+    if (created.kind !== 'ok') throw new Error(created.kind);
+    s.updateProject(created.file.project.id, project => planMoveProject(project, 'someday', {nowIso: NOW}));
+
+    expect(heard.map(e => [e.entity, e.change.kind, e.change.from, e.change.to, e.change.actor])).toEqual([
+      ['project', 'added', undefined, 'active', 'agent:planner'],
+      ['project', 'moved', 'active', 'someday', 'agent:planner'],
+    ]);
   });
 
   test('the tickler promotes arrived deferrals as omni', () => {

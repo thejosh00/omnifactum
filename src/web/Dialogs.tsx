@@ -6,7 +6,7 @@ import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {TASK_STATES, type TaskState} from '../core/types.ts';
 import {BINDINGS, keyLabel} from './keys.ts';
 
-function Modal({title, onClose, children}: {title: string; onClose: () => void; children: ReactNode}) {
+export function Modal({title, onClose, children}: {title: string; onClose: () => void; children: ReactNode}) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {

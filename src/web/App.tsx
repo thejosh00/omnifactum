@@ -24,7 +24,8 @@ import {
   type WeeklyPlan,
 } from './api.ts';
 import {Clarify} from './Clarify.tsx';
-import {ProjectsPanel, WeeklyBanner} from './Weekly.tsx';
+import {NewProjectDialog, ProjectPanel, ProjectsView} from './Projects.tsx';
+import {WeeklyBanner} from './Weekly.tsx';
 import {Detail, type DetailActions} from './Detail.tsx';
 import {Confirm, Help, MoveMenu, Prompt, type PromptRequest} from './Dialogs.tsx';
 import {intentFor, type Intent} from './keys.ts';
@@ -143,7 +144,11 @@ type Dialog =
   | {kind: 'move'; task: TaskJson}
   | {kind: 'delete'; task: TaskJson}
   | {kind: 'help'}
-  | {kind: 'clarify'; ids: string[]; walking: boolean};
+  | {kind: 'clarify'; ids: string[]; walking: boolean}
+  | {kind: 'new-project'};
+
+/** Keys that act on the task list, which mean nothing on the projects page. */
+const TASK_LIST_INTENTS = new Set<Intent>(['down', 'up', 'top', 'bottom', 'open', 'complete', 'move', 'note', 'tags', 'delete', 'clarify']);
 
 function Row({
   task,
@@ -218,6 +223,24 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   const [capture, setCapture] = useState('');
   const [weekly, setWeekly] = useState<WeeklyPlan>();
   const [walk, setWalk] = useState<{index: number; recorded?: number}>();
+  const [projectsView, setProjectsView] = useState(() => window.location.hash.replace(/^#\/?/, '') === 'projects');
+  const [openProject, setOpenProject] = useState<string>();
+  const openProjectRef = useRef(openProject);
+  openProjectRef.current = openProject;
+
+  // One panel at a time on the right: a task, or a project.
+  const openTask = useCallback((id: string) => {
+    setOpenProject(undefined);
+    setOpen(id);
+  }, []);
+  const openProjectPanel = useCallback((id: string) => {
+    setOpen(undefined);
+    setOpenProject(id);
+  }, []);
+  const showList = useCallback((state: TaskState) => {
+    setProjectsView(false);
+    setList(state);
+  }, []);
   const captureInput = useRef<HTMLInputElement>(null);
   const filterInput = useRef<HTMLInputElement>(null);
   const openRef = useRef(open);
@@ -248,8 +271,8 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   // Each step of the review shows its own list.
   const walkStep = walk === undefined || weekly === undefined ? undefined : weekly.steps[walk.index];
   useEffect(() => {
-    if (walkStep?.list !== undefined) setList(walkStep.list);
-  }, [walkStep?.step, walkStep?.list]);
+    if (walkStep?.list !== undefined) showList(walkStep.list);
+  }, [walkStep?.step, walkStep?.list, showList]);
   const showingProjects = walk !== undefined && walk.recorded === undefined && walkStep !== undefined && walkStep.list === undefined;
 
   const stepTo = useCallback(
@@ -271,9 +294,9 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   }, [reload, toast]);
 
   useEffect(() => {
-    window.location.hash = `/${list}`;
+    window.location.hash = projectsView ? '/projects' : `/${list}`;
     setCursor(undefined);
-  }, [list]);
+  }, [list, projectsView]);
 
   // Changes made elsewhere: refetch, and say what happened if it was not you.
   const reloadRef = useRef(reload);
@@ -287,10 +310,14 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
     return listen(
       (event: ChangeEvent) => {
         soon();
-        if (event.id === openRef.current) setRevision(value => value + 1);
+        // A project's panel lists its tasks, so any change may be one it shows.
+        if (event.id === openRef.current || event.entity === 'project' || openProjectRef.current !== undefined) {
+          setRevision(value => value + 1);
+        }
         if (event.actor !== undefined && event.actor !== session.actor) {
-          const change: Change = event;
-          toast(describeChange(change) + (event.note === undefined ? '' : `: ${event.note}`));
+          const change = event as Change;
+          const sentence = describeChange(change) + (event.note === undefined ? '' : `: ${event.note}`);
+          toast(event.entity === 'project' ? `Project ${sentence}` : sentence);
         }
       },
       soon,
@@ -428,10 +455,14 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   const run = useCallback(
     (intent: Intent) => {
       if (intent.startsWith('list:')) {
-        setList(intent.slice(5) as TaskState);
+        showList(intent.slice(5) as TaskState);
         return;
       }
+      if (projectsView && open === undefined && TASK_LIST_INTENTS.has(intent)) return;
       switch (intent) {
+        case 'projects':
+          setProjectsView(value => !value);
+          return;
         case 'down':
           setCursor(rows[Math.min(rows.length - 1, index + 1)]?.id);
           return;
@@ -445,10 +476,11 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           setCursor(rows.at(-1)?.id);
           return;
         case 'open':
-          if (selected !== undefined) setOpen(selected.id);
+          if (selected !== undefined) openTask(selected.id);
           return;
         case 'close':
-          if (open !== undefined) setOpen(undefined);
+          if (openProject !== undefined) setOpenProject(undefined);
+          else if (open !== undefined) setOpen(undefined);
           else if (query.length > 0) setQuery('');
           return;
         case 'capture':
@@ -502,7 +534,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           return;
       }
     },
-    [rows, index, selected, open, query, actions, walk, weekly, stepTo, finishWeekly],
+    [rows, index, selected, open, openProject, projectsView, query, actions, walk, weekly, stepTo, finishWeekly, openTask, showList],
   );
 
   useEffect(() => {
@@ -546,7 +578,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   };
 
   return (
-    <div className={open === undefined ? 'app' : 'app with-detail'}>
+    <div className={open === undefined && openProject === undefined ? 'app' : 'app with-detail'}>
       <header className="topbar">
         <span className="wordmark small">omnifactum</span>
         <select
@@ -592,9 +624,9 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         {TASK_STATES.map((state, position) => (
           <button
             key={state}
-            className={state === list && !showingProjects ? 'tab active' : 'tab'}
-            onClick={() => setList(state)}
-            aria-current={state === list && !showingProjects ? 'page' : undefined}
+            className={state === list && !showingProjects && !projectsView ? 'tab active' : 'tab'}
+            onClick={() => showList(state)}
+            aria-current={state === list && !showingProjects && !projectsView ? 'page' : undefined}
             title={`${LIST_BLURBS[state]} (${position + 1})`}
           >
             {state}
@@ -603,6 +635,14 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
             )}
           </button>
         ))}
+        <button
+          className={projectsView || showingProjects ? 'tab active' : 'tab'}
+          onClick={() => setProjectsView(true)}
+          aria-current={projectsView ? 'page' : undefined}
+          title="Outcomes that take more than one action (p)"
+        >
+          Projects
+        </button>
         {weekly !== undefined && walk === undefined && (
           <button
             className={`tab weekly-tab${(weekly.days_since_last_review ?? 99) >= 7 ? ' due' : ''}`}
@@ -630,11 +670,13 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
             onStep={stepTo}
             onFinish={() => void finishWeekly()}
             onExit={() => setWalk(undefined)}
-            onOpenTask={id => setOpen(id)}
+            onOpenTask={openTask}
           />
         )}
         {showingProjects ? (
-          <ProjectsPanel now={now} revision={revision} />
+          <ProjectsView now={now} revision={revision} activeOnly onOpen={openProjectPanel} />
+        ) : projectsView ? (
+          <ProjectsView now={now} revision={revision} onOpen={openProjectPanel} onNew={() => setDialog({kind: 'new-project'})} />
         ) : (
           <>
         <div className="list-head">
@@ -676,7 +718,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
                 now={now}
                 selected={task.id === selected?.id}
                 onSelect={() => setCursor(task.id)}
-                onOpen={() => setOpen(task.id)}
+                onOpen={() => openTask(task.id)}
               />
             ))}
           </ul>
@@ -685,6 +727,21 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         )}
       </main>
 
+      {openProject !== undefined && (
+        <ProjectPanel
+          key={openProject}
+          id={openProject}
+          revision={revision}
+          now={now}
+          toast={toast}
+          onClose={() => setOpenProject(undefined)}
+          onOpenTask={openTask}
+          onChanged={() => {
+            void reload();
+            setRevision(value => value + 1);
+          }}
+        />
+      )}
       {open !== undefined && (
         <Detail
           key={open}
@@ -724,6 +781,16 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         />
       )}
       {dialog?.kind === 'help' && <Help onClose={() => setDialog(undefined)} />}
+      {dialog?.kind === 'new-project' && (
+        <NewProjectDialog
+          onClose={() => setDialog(undefined)}
+          onCreated={project => {
+            toast(`Started "${project.title}". Add its next action.`);
+            setRevision(value => value + 1);
+            openProjectPanel(project.id);
+          }}
+        />
+      )}
       {dialog?.kind === 'clarify' && (
         <Clarify
           ids={dialog.ids}

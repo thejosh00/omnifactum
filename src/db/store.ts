@@ -32,7 +32,7 @@ import type {
 } from '../core/types.ts';
 import {isBusy} from './busy.ts';
 import type {Account} from './database.ts';
-import type {EventHub, StoredEvent} from './events.ts';
+import type {EventEntity, EventHub, StoredEvent} from './events.ts';
 
 /** What a mutation did. */
 export type Updated<T> =
@@ -322,12 +322,31 @@ export class Store {
     const event: Change = {...change, actor: this.actor};
     if (grew && change.note !== undefined) event.note = change.note;
     else delete event.note;
+    this.announce(event, 'task');
+  }
 
+  /** The project twin of `record`: added, completed, moved, or otherwise edited. */
+  private recordProject(before: Project | undefined, after: Project): void {
+    const event: Change = {kind: 'edited', id: after.id, title: after.title, to: after.state, actor: this.actor};
+    if (before === undefined) event.kind = 'added';
+    else if (before.state !== after.state) {
+      event.kind = after.state === 'done' ? 'completed' : 'moved';
+      event.from = before.state;
+    }
+    if (after.log.length > (before?.log.length ?? 0)) {
+      const latest = after.log.at(-1);
+      if (latest !== undefined && latest.text.length > 0) event.note = latest.text;
+    }
+    this.announce(event, 'project');
+  }
+
+  /** Write an event, to be published once the surrounding transaction commits. */
+  private announce(event: Change, entity: EventEntity): void {
     const at = this.now();
     const inserted = this.db
       .query(
-        `INSERT INTO events (account_id, at, kind, task_id, title, from_state, to_state, actor, note)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING seq`,
+        `INSERT INTO events (account_id, at, kind, task_id, title, from_state, to_state, actor, note, entity)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING seq`,
       )
       .get(
         this.account.id,
@@ -339,9 +358,10 @@ export class Store {
         event.to ?? null,
         event.actor ?? null,
         event.note ?? null,
+        entity,
       ) as {seq: number};
 
-    stateFor(this.db).pending.push({seq: inserted.seq, accountId: this.account.id, at, change: event});
+    stateFor(this.db).pending.push({seq: inserted.seq, accountId: this.account.id, at, entity, change: event});
   }
 
   // --- tasks ---------------------------------------------------------------------
@@ -519,6 +539,7 @@ export class Store {
       )
       .run(this.account.id, project.id, chosen, ...this.projectValues(project));
     this.writeProjectLog(project);
+    this.recordProject(undefined, project);
     return {project, stem: chosen, version: 1};
   }
 
@@ -575,6 +596,7 @@ export class Store {
         )
         .run(stem, ...this.projectValues(next), this.account.id, id);
       this.writeProjectLog(next);
+      this.recordProject(current.project, next);
       return {kind: 'ok', file: {project: next, stem, version: current.version + 1}} as const;
     });
   }

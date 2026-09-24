@@ -926,3 +926,78 @@ button.link:hover {
   color: var(--warn);
   font-weight: 600;
 }
+
+/* --- projects ------------------------------------------------------------------ */
+
+.project-row {
+  cursor: pointer;
+}
+.project-section + .project-section {
+  margin-top: 22px;
+}
+.project-section h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.project-section h2 button.link {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.stalled-note {
+  color: var(--warn);
+}
+.project-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.outcome-field {
+  display: block;
+  margin-bottom: 12px;
+}
+.project-states button.chosen:disabled {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+  cursor: default;
+}
+.stalled-banner {
+  border: 1px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.add-next {
+  display: flex;
+  gap: 8px;
+}
+.project-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.project-tasks li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.project-tasks li:last-child {
+  border-bottom: 0;
+}
+.open-actions {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.modal label.spaced {
+  margin-top: 12px;
+}

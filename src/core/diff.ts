@@ -11,7 +11,7 @@
  */
 import {latestEntry} from './log.ts';
 import type {Snapshot} from './snapshot.ts';
-import type {Task, TaskFile, TaskState} from './types.ts';
+import type {ProjectState, Task, TaskFile, TaskState} from './types.ts';
 
 export type ChangeKind = 'completed' | 'added' | 'moved' | 'edited' | 'removed';
 
@@ -19,8 +19,9 @@ export interface Change {
   kind: ChangeKind;
   id: string;
   title: string;
-  from?: TaskState;
-  to?: TaskState;
+  /** A task's state, or a project's when the change is to a project. */
+  from?: TaskState | ProjectState;
+  to?: TaskState | ProjectState;
   /** Who the task's newest log entry credits, e.g. `agent:claude-code`. */
   actor?: string;
   note?: string;

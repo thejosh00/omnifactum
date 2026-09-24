@@ -207,6 +207,7 @@ it is generated from the keymap itself, so it can never be out of date.
 | `x` | complete (accept, in review) |
 | `m` | move to another list |
 | `C` | clarify — the whole inbox, from the inbox |
+| `p` | projects |
 | `W` | walk the weekly review; then `n` / `b` for the next and previous step |
 | `t` | edit tags |
 | `N` | record what happened |
@@ -373,8 +374,12 @@ there is no way to tell a finished project from an abandoned one.
 alias so anything still using it resolves. `omni project done` refuses while actions are still open, unless you
 pass `--yes`.
 
-Projects are command-line only for now; the web app shows a task's project but has no
-project view yet.
+In the web app, press `p` or click **Projects**. Each one shows its outcome and whether it
+is moving; open one to rename it, edit its outcome and notes, park it in someday, finish
+it, or type its next action straight in. A stalled project says so at the top of its page,
+next to the box for the action that would unstall it. Finishing one that still has open
+actions lists them and asks first — the same rule as `omni project done`, which now also
+applies to `omni project mv <project> done`.
 
 ## The weekly review
 
@@ -590,8 +595,8 @@ already lists the work agents have handed back.
 **Does a task in `review` count as progress for its project?** Yes, so the stalled check
 does not nag about work that is genuinely moving.
 
-**Where did the terminal interface go?** The web app replaced it. Managing projects —
-creating, renaming, completing — is still command-line only, through `omni project`.
+**Where did the terminal interface go?** The web app replaced it, and does everything it
+did.
 
 ## Development
 
