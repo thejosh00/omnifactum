@@ -61,7 +61,7 @@ export function storeFor(options: CliOptions): Store {
   });
 }
 
-const LOCAL = new Set(['serve', 'service', 'account', 'import']);
+const LOCAL = new Set(['serve', 'service', 'backup', 'account', 'import']);
 
 export async function omni(args: readonly string[], options: CliOptions): Promise<CliResult> {
   if (LOCAL.has(args[0] ?? '')) {

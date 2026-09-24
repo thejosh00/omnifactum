@@ -56,7 +56,7 @@ Then, from the repo:
 
 | Command | Does |
 | --- | --- |
-| `bun run status` | whether it is running |
+| `bun run status` | whether it is running, and when it last backed up |
 | `bun run restart` | restart it — do this after changing the code |
 | `bun run stop` | stop it until you next log in |
 | `bun run start` | start it again |
@@ -524,11 +524,31 @@ current task if someone got there first.
 Everything lives in one SQLite file, `~/.omnifactum/omni.db` (override the folder with
 `OMNI_DIR` or `--dir`). Each account's tasks, projects and logs are kept apart inside it.
 
-**Back it up** with SQLite's own backup, which is safe while the server runs:
+### Backups
+
+The server backs the database up once a day into `~/.omnifactum/backups/` and keeps the
+last 14. It checks when it starts and then every hour, so a day the Mac spent asleep
+overnight still gets its backup the first time the server is up — there is no 3am job to
+miss. `bun run status` says when the last one was taken.
 
 ```bash
-sqlite3 ~/.omnifactum/omni.db ".backup ~/omni-backup.db"
+omni backup           # take one now, before something drastic; these are never pruned
+omni backup list      # what there is
 ```
+
+Each backup is a complete, checked copy of the database, so **restoring** is putting one
+back in place:
+
+```bash
+bun run stop
+omni backup           # keep a copy of how things are now, in case you want it back
+cp ~/.omnifactum/backups/omni-2026-09-22.db ~/.omnifactum/omni.db
+rm -f ~/.omnifactum/omni.db-wal ~/.omnifactum/omni.db-shm
+bun run start
+```
+
+The backups live on the same disk as the database, so they cover mistakes, not a dead
+drive. Time Machine, or anything else that copies `~/.omnifactum`, covers that.
 
 **Tags are whatever you type.** There is no registry to add them to. Contexts, energy
 levels and priorities are all just tags, which is why there are no separate fields for
@@ -547,8 +567,8 @@ them. `omni tags` lists every one in use.
 ## Questions
 
 **Is there an undo?** No. No trash and no version history. `omni rm` asks for `--yes` and
-suggests `omni mv <task> someday` instead, and the web app confirms before deleting.
-Back up the database if that worries you.
+suggests `omni mv <task> someday` instead, and the web app confirms before deleting. The
+nearest thing is [yesterday's backup](#backups).
 
 **Is it secure?** It is built for a home network. Anyone who can reach the server can open
 an account without a PIN, and the traffic is plain HTTP. Do not expose it to the internet.

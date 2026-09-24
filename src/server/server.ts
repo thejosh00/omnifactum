@@ -13,6 +13,7 @@ import {EXIT_NOT_FOUND, EXIT_USAGE} from '../commands/context.ts';
 import {callerForSession, callerForToken, createSession, endSession, type Caller} from '../db/auth.ts';
 import {checkPin, findAccount, listAccounts} from '../db/database.ts';
 import {EventHub, eventToJson, eventsSince, latestEventSeq} from '../db/events.ts';
+import {dailyBackup} from '../db/backup.ts';
 import {Store} from '../db/store.ts';
 import {sweepTickler} from '../db/tickler.ts';
 import {errorResponse, handleApi, json} from './api.ts';
@@ -20,6 +21,7 @@ import homepage from '../web/index.html';
 
 export const SESSION_COOKIE = 'omni_session';
 const TICKLER_INTERVAL_MS = 60_000;
+const BACKUP_CHECK_MS = 60 * 60_000;
 const KEEPALIVE_MS = 20_000;
 
 export interface ServeOptions {
@@ -31,6 +33,8 @@ export interface ServeOptions {
   development?: boolean;
   /** Off in tests, which drive the sweep themselves. */
   tickler?: boolean;
+  /** Take a daily backup into `<dataDir>/backups`. Off unless given. */
+  backups?: {dataDir: string; log?: (line: string) => void};
 }
 
 export interface RunningServer {
@@ -200,12 +204,29 @@ export function startServer(options: ServeOptions): RunningServer {
     timer = setInterval(sweep, TICKLER_INTERVAL_MS);
   }
 
+  let backupTimer: ReturnType<typeof setInterval> | undefined;
+  if (options.backups !== undefined) {
+    const {dataDir, log} = options.backups;
+    const check = () => {
+      try {
+        const path = dailyBackup(db, dataDir, new Date(now()));
+        if (path !== undefined) log?.(`${now()} backed up to ${path}`);
+      } catch (error) {
+        // Reported, never fatal: a full disk must not take the task list down with it.
+        log?.(`${now()} backup failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+    check();
+    backupTimer = setInterval(check, BACKUP_CHECK_MS);
+  }
+
   return {
     server,
     hub,
     url: server.url.toString().replace(/\/$/, ''),
     async stop() {
       if (timer !== undefined) clearInterval(timer);
+      if (backupTimer !== undefined) clearInterval(backupTimer);
       await server.stop(true);
     },
   };

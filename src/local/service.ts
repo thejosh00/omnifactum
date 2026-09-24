@@ -13,6 +13,7 @@ import {existsSync, mkdirSync, unlinkSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {basename, join, resolve} from 'node:path';
 import {flagValue, parseArgs} from '../core/args.ts';
+import {listBackups} from '../db/backup.ts';
 import {EXIT_ERROR, EXIT_OK, EXIT_USAGE} from '../commands/context.ts';
 
 export const SERVICE_LABEL = 'com.omnifactum.serve';
@@ -231,6 +232,8 @@ export function serviceCommand(ctx: ServiceContext, argv: readonly string[]): nu
       ctx.out(pid === undefined ? 'installed, waiting to restart' : `running, pid ${pid}`);
       const restarts = runs === undefined ? 0 : Number(runs) - 1;
       if (restarts > 0) ctx.out(`restarted ${restarts === 1 ? 'once' : `${restarts} times`} since it was loaded`);
+      const latest = listBackups(ctx.dataDir)[0];
+      ctx.out(latest === undefined ? 'no backups yet' : `last backup: ${latest.name}, ${latest.modified.toLocaleString()}`);
       ctx.out(`log: ${logPath}`);
       return EXIT_OK;
     }

@@ -10,7 +10,7 @@
  * a shell from overwriting each other: there is one writer, and it is the server.
  */
 import {networkInterfaces} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {homedir} from 'node:os';
 import {resolveDataDir} from './config.ts';
 import {flagValue, hasFlag, parseArgs} from './core/args.ts';
@@ -21,6 +21,7 @@ import {EXIT_BUSY, EXIT_OK, EXIT_USAGE} from './commands/context.ts';
 import {COMMAND_ALIASES, commandSummaries} from './commands/run.ts';
 import {DB_FILE, openDatabase} from './db/database.ts';
 import {accountCommand, type LocalContext} from './local/account.ts';
+import {backupCommand} from './local/backup.ts';
 import {importCommand} from './local/import.ts';
 import {serviceCommand} from './local/service.ts';
 
@@ -29,11 +30,12 @@ export const VERSION = '0.2.0';
 export {COMMAND_NAMES, COMMAND_ALIASES} from './commands/run.ts';
 
 /** The commands that run on this machine rather than on the server. */
-export const LOCAL_COMMAND_NAMES = ['serve', 'service', 'account', 'import'];
+export const LOCAL_COMMAND_NAMES = ['serve', 'service', 'backup', 'account', 'import'];
 
 const LOCAL_COMMANDS: Array<[string, string]> = [
   ['serve', 'start the server and the web app'],
   ['service', 'keep the server running in the background (macOS)'],
+  ['backup', 'back up the database now, or list backups'],
   ['account', 'accounts, PINs, and tokens for the CLI and agents'],
   ['import', 'bring a markdown vault into an account'],
 ];
@@ -127,6 +129,15 @@ export async function run(options: RunOptions): Promise<number> {
     return serviceCommand({dataDir: directory, out, err}, rest);
   }
 
+  if (resolved === 'backup') {
+    const db = openDatabase(join(directory, DB_FILE));
+    try {
+      return backupCommand({db, dataDir: directory, now, json, out, err}, rest);
+    } finally {
+      db.close();
+    }
+  }
+
   if (resolved === 'account' || resolved === 'import') {
     const db = openDatabase(join(directory, DB_FILE));
     try {
@@ -183,7 +194,13 @@ function dataDirFrom(env: Record<string, string | undefined>, flag: string | und
 async function serve(request: ServeRequest): Promise<number> {
   const {startServer} = await import('./server/server.ts');
   const db = openDatabase(request.dbPath);
-  const running = startServer({db, hostname: request.hostname, port: request.port, development: request.development});
+  const running = startServer({
+    db,
+    hostname: request.hostname,
+    port: request.port,
+    development: request.development,
+    backups: {dataDir: dirname(request.dbPath), log: line => request.out(line)},
+  });
 
   request.out(`omni is serving ${request.dbPath}`);
   request.out(`  on this machine:  http://localhost:${running.server.port}`);
