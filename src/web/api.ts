@@ -43,6 +43,23 @@ export interface ChangeEvent {
   note?: string;
 }
 
+export interface WeeklyStep {
+  step: string;
+  title: string;
+  prompt: string;
+  list?: TaskState;
+  count: number;
+  flags: string[];
+  flag_tasks: Array<string | null>;
+}
+
+export interface WeeklyPlan {
+  at: string;
+  days_since_last_review?: number;
+  needs_attention: number;
+  steps: WeeklyStep[];
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -102,6 +119,8 @@ export const api = {
   clarify: (id: string, from: TaskState, outcome: ClarifyOutcome) =>
     call<{task?: TaskJson; deleted?: TaskJson}>('POST', `${ref(id)}/clarify`, {from, outcome}),
   projects: () => call<{projects: ProjectJson[]}>('GET', '/api/projects').then(r => r.projects),
+  weekly: () => call<WeeklyPlan>('GET', '/api/weekly'),
+  recordWeekly: () => call<{projects_stamped: number; needs_attention: number}>('POST', '/api/weekly/record'),
 };
 
 /**

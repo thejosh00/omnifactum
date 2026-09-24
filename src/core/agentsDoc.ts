@@ -201,6 +201,10 @@ omni add "Order tiles" -p renovate-the-kitchen --next --json
 Tags must match \`${TAG_PATTERN.source}\` — lowercase, no spaces, use \`-\` to join words.
 They are free-form: there is no list to register with.
 
+A date without a time (\`--due 2026-10-15\`) means that day on the server's local calendar:
+it is due until local midnight, and a \`defer\` date arrives at local midnight. Log
+timestamps are UTC.
+
 ## Projects
 
 A project is an outcome that needs more than one action, with an \`outcome\` saying what

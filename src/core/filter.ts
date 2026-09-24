@@ -14,6 +14,7 @@
  */
 import {isDeferred, isDueBy, isOverdue} from './tickler.ts';
 import {normalizeTag} from './tags.ts';
+import {addLocalDays, localDate} from './time.ts';
 import {isTaskState} from './types.ts';
 import type {Task} from './types.ts';
 
@@ -42,7 +43,7 @@ export interface ParsedQuery {
 
 export interface EvalContext {
   nowIso: string;
-  /** Resolves `today`, `tomorrow`, `+7d` into a date. Defaults to UTC arithmetic. */
+  /** Resolves `today`, `tomorrow`, `+7d` into a date, on the local calendar. */
   today?: string;
 }
 
@@ -135,18 +136,16 @@ function parseField(field: string, value: string, warnings: string[]): Atom | un
   }
 }
 
-/** Resolve `today`, `tomorrow`, `+7d` and ISO dates into a `YYYY-MM-DD`. */
+/** Resolve `today`, `tomorrow`, `+7d` and ISO dates into a local `YYYY-MM-DD`. */
 export function resolveDate(value: string, nowIso: string): string | undefined {
   const trimmed = value.trim().toLowerCase();
   const now = new Date(nowIso);
   if (Number.isNaN(now.getTime())) return undefined;
+  const today = localDate(now);
 
-  const dayMs = 86_400_000;
-  const asDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
-
-  if (trimmed === 'today') return asDate(now.getTime());
-  if (trimmed === 'tomorrow') return asDate(now.getTime() + dayMs);
-  if (trimmed === 'yesterday') return asDate(now.getTime() - dayMs);
+  if (trimmed === 'today') return today;
+  if (trimmed === 'tomorrow') return addLocalDays(today, 1);
+  if (trimmed === 'yesterday') return addLocalDays(today, -1);
 
   const relative = /^([+-])(\d+)([dwm])$/.exec(trimmed);
   if (relative !== null) {
@@ -154,11 +153,17 @@ export function resolveDate(value: string, nowIso: string): string | undefined {
     const amount = Number(relative[2]);
     const unit = relative[3];
     const days = unit === 'w' ? amount * 7 : unit === 'm' ? amount * 30 : amount;
-    return asDate(now.getTime() + sign * days * dayMs);
+    return addLocalDays(today, sign * days);
   }
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   return undefined;
+}
+
+/** The local day a due date falls on: a bare date is already one, a timestamp is converted. */
+function dueDay(due: string): string {
+  const trimmed = due.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : localDate(trimmed);
 }
 
 function matchesAtom(atom: Atom, task: Task, ctx: EvalContext): boolean {
@@ -178,9 +183,9 @@ function matchesAtom(atom: Atom, task: Task, ctx: EvalContext): boolean {
     case 'due': {
       const date = resolveDate(atom.value, ctx.nowIso);
       if (date === undefined || task.due === undefined) return false;
-      if (atom.comparison === '=') return task.due.slice(0, 10) === date;
+      if (atom.comparison === '=') return dueDay(task.due) === date;
       if (atom.comparison === '<=') return isDueBy(task, date, ctx.nowIso);
-      return !isDueBy(task, date, ctx.nowIso) || task.due.slice(0, 10) === date;
+      return !isDueBy(task, date, ctx.nowIso) || dueDay(task.due) === date;
     }
     case 'has': {
       const negated = atom.field.startsWith('!');

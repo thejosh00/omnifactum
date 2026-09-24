@@ -6,18 +6,16 @@
  * that is what they are for — and this is only how it reads on screen.
  */
 import {instantOf} from './tickler.ts';
+import {daysBetweenLocal, localDate} from './time.ts';
 
-const DAY_MS = 86_400_000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** Whole days from one instant to another, counted by calendar day in UTC. */
+/** Whole days from one moment to another, counted on the local calendar. */
 export function daysUntil(target: string, nowIso: string): number | undefined {
   const to = instantOf(target);
   const from = instantOf(nowIso);
   if (to === undefined || from === undefined) return undefined;
-
-  const startOfDay = (ms: number): number => Math.floor(ms / DAY_MS) * DAY_MS;
-  return Math.round((startOfDay(to) - startOfDay(from)) / DAY_MS);
+  return daysBetweenLocal(localDate(new Date(from)), localDate(new Date(to)));
 }
 
 export type Urgency = 'overdue' | 'today' | 'soon' | 'later';
@@ -61,7 +59,7 @@ export function shortDate(value: string): string {
   const at = instantOf(value);
   if (at === undefined) return value;
   const date = new Date(at);
-  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
 /** How long ago something happened, for a log line. */

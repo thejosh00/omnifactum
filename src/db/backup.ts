@@ -16,6 +16,7 @@
 import {existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {Database} from 'bun:sqlite';
+import {localDate} from '../core/time.ts';
 
 export const BACKUP_DIR = 'backups';
 /** How many daily backups to keep. On-demand ones are never pruned. */
@@ -26,11 +27,6 @@ const ANY = /^omni-\d{4}-\d{2}-\d{2}(?:T\d{4})?\.db$/;
 
 function pad(value: number): string {
   return String(value).padStart(2, '0');
-}
-
-/** The local calendar date, which is what a person means by "yesterday's backup". */
-export function localDate(at: Date): string {
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 }
 
 export function dailyName(at: Date): string {

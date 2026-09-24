@@ -45,6 +45,7 @@ import {runCommand} from '../commands/run.ts';
 import {isBusy} from '../db/busy.ts';
 import {latestEventSeq, type EventHub} from '../db/events.ts';
 import {Store, type Updated} from '../db/store.ts';
+import {planToJson, recordWeekly, weeklyState} from '../db/weekly.ts';
 import type {Caller} from '../db/auth.ts';
 
 export interface ApiContext {
@@ -529,6 +530,16 @@ export async function handleApi(ctx: ApiContext, request: Request, url: URL): Pr
     }
     if (resource === 'projects' && method === 'GET') {
       return ref === undefined ? listProjects(ctx) : showProject(ctx, ref);
+    }
+    if (resource === 'weekly') {
+      const store = storeFor(ctx);
+      if (ref === undefined && method === 'GET') {
+        return json({ok: true, ...planToJson(weeklyState(store, ctx.now()))});
+      }
+      if (ref === 'record' && method === 'POST') {
+        const {plan, stamped} = recordWeekly(store, ctx.now());
+        return json(ok({at: plan.at, projects_stamped: stamped, needs_attention: plan.needingAttention}));
+      }
     }
     if (resource === 'agents' && method === 'GET') {
       return json({ok: true, contract: agentsDocument()});

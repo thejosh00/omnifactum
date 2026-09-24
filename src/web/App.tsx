@@ -12,8 +12,19 @@ import {applyTagEdit, formatTags, parseCapture, parseTagEdit} from '../core/capt
 import {describeChange, type Change} from '../core/diff.ts';
 import {metaSegments} from '../core/format.ts';
 import {TASK_STATES, type TaskState} from '../core/types.ts';
-import {api, ApiError, listen, type AccountInfo, type ChangeEvent, type Session, type TaskJson, type TaskList} from './api.ts';
+import {
+  api,
+  ApiError,
+  listen,
+  type AccountInfo,
+  type ChangeEvent,
+  type Session,
+  type TaskJson,
+  type TaskList,
+  type WeeklyPlan,
+} from './api.ts';
 import {Clarify} from './Clarify.tsx';
+import {ProjectsPanel, WeeklyBanner} from './Weekly.tsx';
 import {Detail, type DetailActions} from './Detail.tsx';
 import {Confirm, Help, MoveMenu, Prompt, type PromptRequest} from './Dialogs.tsx';
 import {intentFor, type Intent} from './keys.ts';
@@ -205,6 +216,8 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   const [dialog, setDialog] = useState<Dialog>();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [capture, setCapture] = useState('');
+  const [weekly, setWeekly] = useState<WeeklyPlan>();
+  const [walk, setWalk] = useState<{index: number; recorded?: number}>();
   const captureInput = useRef<HTMLInputElement>(null);
   const filterInput = useRef<HTMLInputElement>(null);
   const openRef = useRef(open);
@@ -218,8 +231,10 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
 
   const reload = useCallback(async () => {
     try {
-      const next = await api.list(list, query);
+      // The review plan is re-read with the list, so a step you have just cleared says so.
+      const [next, plan] = await Promise.all([api.list(list, query), api.weekly()]);
       setData(next);
+      setWeekly(plan);
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 401) onSignedOut();
       else toast(failure instanceof Error ? failure.message : String(failure), 'error');
@@ -229,6 +244,31 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Each step of the review shows its own list.
+  const walkStep = walk === undefined || weekly === undefined ? undefined : weekly.steps[walk.index];
+  useEffect(() => {
+    if (walkStep?.list !== undefined) setList(walkStep.list);
+  }, [walkStep?.step, walkStep?.list]);
+  const showingProjects = walk !== undefined && walk.recorded === undefined && walkStep !== undefined && walkStep.list === undefined;
+
+  const stepTo = useCallback(
+    (index: number) => {
+      if (weekly === undefined) return;
+      setWalk({index: Math.max(0, Math.min(weekly.steps.length - 1, index))});
+    },
+    [weekly],
+  );
+
+  const finishWeekly = useCallback(async () => {
+    try {
+      const result = await api.recordWeekly();
+      setWalk(current => (current === undefined ? current : {...current, recorded: result.projects_stamped}));
+      void reload();
+    } catch (failure) {
+      toast(failure instanceof Error ? failure.message : String(failure), 'error');
+    }
+  }, [reload, toast]);
 
   useEffect(() => {
     window.location.hash = `/${list}`;
@@ -420,6 +460,18 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         case 'help':
           setDialog({kind: 'help'});
           return;
+        case 'weekly':
+          setWalk(current => (current === undefined ? {index: 0} : undefined));
+          return;
+        case 'step-next':
+          if (walk !== undefined && walk.recorded === undefined) {
+            if (weekly !== undefined && walk.index === weekly.steps.length - 1) void finishWeekly();
+            else stepTo(walk.index + 1);
+          }
+          return;
+        case 'step-back':
+          if (walk !== undefined && walk.recorded === undefined) stepTo(walk.index - 1);
+          return;
         case 'clarify':
           if (list === 'inbox' && open === undefined) {
             clarifyInbox();
@@ -450,7 +502,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           return;
       }
     },
-    [rows, index, selected, open, query, actions],
+    [rows, index, selected, open, query, actions, walk, weekly, stepTo, finishWeekly],
   );
 
   useEffect(() => {
@@ -540,9 +592,9 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         {TASK_STATES.map((state, position) => (
           <button
             key={state}
-            className={state === list ? 'tab active' : 'tab'}
+            className={state === list && !showingProjects ? 'tab active' : 'tab'}
             onClick={() => setList(state)}
-            aria-current={state === list ? 'page' : undefined}
+            aria-current={state === list && !showingProjects ? 'page' : undefined}
             title={`${LIST_BLURBS[state]} (${position + 1})`}
           >
             {state}
@@ -551,9 +603,40 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
             )}
           </button>
         ))}
+        {weekly !== undefined && walk === undefined && (
+          <button
+            className={`tab weekly-tab${(weekly.days_since_last_review ?? 99) >= 7 ? ' due' : ''}`}
+            onClick={() => setWalk({index: 0})}
+            title="Walk the weekly review (W)"
+          >
+            Weekly review
+            <span className="muted small">
+              {weekly.days_since_last_review === undefined
+                ? 'never'
+                : weekly.days_since_last_review === 0
+                  ? 'today'
+                  : `${weekly.days_since_last_review}d ago`}
+            </span>
+          </button>
+        )}
       </nav>
 
       <main className="list-pane">
+        {walk !== undefined && weekly !== undefined && (
+          <WeeklyBanner
+            plan={weekly}
+            index={walk.index}
+            recorded={walk.recorded}
+            onStep={stepTo}
+            onFinish={() => void finishWeekly()}
+            onExit={() => setWalk(undefined)}
+            onOpenTask={id => setOpen(id)}
+          />
+        )}
+        {showingProjects ? (
+          <ProjectsPanel now={now} revision={revision} />
+        ) : (
+          <>
         <div className="list-head">
           <div>
             <h1>{list}</h1>
@@ -597,6 +680,8 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
               />
             ))}
           </ul>
+        )}
+          </>
         )}
       </main>
 

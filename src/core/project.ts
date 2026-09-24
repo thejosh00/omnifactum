@@ -10,6 +10,7 @@
  * done looks like. A project without one is the precise thing GTD exists to prevent, so
  * a missing outcome is a finding rather than something to invent.
  */
+import {localDate} from './time.ts';
 import {joinFrontmatter, splitFrontmatter} from './frontmatter.ts';
 import {appendLogEntry, joinBodyAndLog, splitBodyAndLog} from './log.ts';
 import {ACTOR_USER} from './mutation.ts';
@@ -324,9 +325,9 @@ export function planSetOutcome(project: Project, outcome: string): Project {
   return {...project, outcome: trimmed};
 }
 
-/** Stamp the date of a review, which is what `omni review` records. */
+/** Stamp the local date of a review, which is what `omni weekly --record` records. */
 export function planReviewed(project: Project, nowIso: string): Project {
-  return {...project, reviewed: nowIso.slice(0, 10)};
+  return {...project, reviewed: localDate(nowIso)};
 }
 
 /**

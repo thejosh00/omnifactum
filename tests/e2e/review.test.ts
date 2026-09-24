@@ -7,7 +7,7 @@
  */
 import {afterEach, describe, expect, test} from 'bun:test';
 import {makeVault, type Vault} from '../helpers/vault.ts';
-import {omni} from '../helpers/cli.ts';
+import {omni, serveFor} from '../helpers/cli.ts';
 
 const NOW = '2026-09-12T11:03:00Z';
 const AGENT = 'agent:claude-code';
@@ -202,4 +202,38 @@ describe('review and the rest of the system', () => {
     expect(v.list()).toEqual(['review/fix-printer-driver.md']);
   });
 
+});
+
+describe('the weekly review over HTTP', () => {
+  test('it says what needs attention, points at the task, and records a pass', async () => {
+    const v = openVault();
+    const server = serveFor(v.dir, NOW);
+    try {
+      const token = server.token('you');
+      const get = (path: string, method = 'GET') =>
+        fetch(`${server.url}${path}`, {method, headers: {authorization: `Bearer ${token}`}}).then(
+          r => r.json() as Promise<Record<string, any>>,
+        );
+      await omni(['add', 'File taxes', '--next', '--due', '2026-01-01', '-t', 'admin'], {dir: v.dir, now: NOW});
+      await omni(['project', 'new', 'Kitchen', '--outcome', 'Cooking in it'], {dir: v.dir, now: NOW});
+      const taxes = JSON.parse((await omni(['show', 'file-taxes', '--json'], {dir: v.dir, now: NOW})).stdout).id;
+
+      const before = await get('/api/weekly');
+      expect(before['days_since_last_review']).toBeUndefined();
+      const next = before['steps'].find((s: any) => s.step === 'next');
+      expect(next.flags).toEqual(['"File taxes" is past its due date']);
+      expect(next.flag_tasks).toEqual([taxes]);
+      expect(next.list).toBe('next');
+
+      const recorded = await get('/api/weekly/record', 'POST');
+      expect(recorded).toMatchObject({ok: true, projects_stamped: 1});
+
+      const after = await get('/api/weekly');
+      expect(after['days_since_last_review']).toBe(0);
+      const project = JSON.parse((await omni(['project', 'show', 'kitchen', '--json'], {dir: v.dir, now: NOW})).stdout);
+      expect(project.project.reviewed).toBeDefined();
+    } finally {
+      await server.stop();
+    }
+  });
 });

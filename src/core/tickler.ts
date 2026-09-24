@@ -10,28 +10,29 @@
  * The promotion happens when `omni` runs, since there is no daemon. That is the honest
  * limitation, and `AGENTS.md` states the rule so an agent can apply it itself.
  */
+import {endOfLocalDay, startOfLocalDay} from './time.ts';
 import type {Task} from './types.ts';
 
 /** A bare `YYYY-MM-DD`, as opposed to a full timestamp. */
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * The instant a date-ish field refers to. A bare date means the start of that day in
- * UTC, which matches how the month buckets are computed.
+ * The instant a date-ish field refers to. A bare date means local midnight at the start
+ * of that day: `defer: 2026-10-01` arrives when the 1st does on the wall calendar, not at
+ * 7pm on the 30th.
  */
 export function instantOf(value: string): number | undefined {
   const trimmed = value.trim();
-  const at = new Date(DATE_ONLY.test(trimmed) ? `${trimmed}T00:00:00Z` : trimmed);
-  const ms = at.getTime();
+  if (DATE_ONLY.test(trimmed)) return startOfLocalDay(trimmed)?.getTime();
+  const ms = new Date(trimmed).getTime();
   return Number.isNaN(ms) ? undefined : ms;
 }
 
-/** The end of the day a bare date refers to, for deciding whether a deadline has passed. */
+/** The end of the day a bare date refers to, locally, for deciding whether a deadline has passed. */
 function endOf(value: string): number | undefined {
   const trimmed = value.trim();
   if (!DATE_ONLY.test(trimmed)) return instantOf(trimmed);
-  const at = new Date(`${trimmed}T23:59:59.999Z`);
-  return Number.isNaN(at.getTime()) ? undefined : at.getTime();
+  return endOfLocalDay(trimmed)?.getTime();
 }
 
 /** Whether a defer date has arrived. An unparsable date is treated as arrived. */

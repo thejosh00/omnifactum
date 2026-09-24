@@ -207,6 +207,7 @@ it is generated from the keymap itself, so it can never be out of date.
 | `x` | complete (accept, in review) |
 | `m` | move to another list |
 | `C` | clarify — the whole inbox, from the inbox |
+| `W` | walk the weekly review; then `n` / `b` for the next and previous step |
 | `t` | edit tags |
 | `N` | record what happened |
 | `X` | delete permanently, after asking |
@@ -403,8 +404,13 @@ delegation nobody has chased in a week, a project with no next action or no outc
 task pointing at a project that no longer exists. A step with nothing to do says `clear`
 so you can move straight past it.
 
-The web app does not walk the review yet; run it from the command line and fix things in
-whichever you prefer.
+In the web app, press `W` or click **Weekly review** at the end of the tabs (it turns amber
+once a week has passed) to walk it step by step. A banner above the list asks each step's
+question and switches to the list it is about. **Every ordinary key works during the
+walk** — complete, tag, move, clarify, open — so finding a problem and fixing it does not
+cost you your place, and the banner updates as you go. Flags about a particular task are
+links to it. The projects step shows your active projects, with stalled ones marked. `n`
+moves on, `b` goes back, and finishing records the pass.
 
 Recording appends a line to the account's review log and stamps every active project with the date,
 which is what makes "what have I not looked at in a month" answerable later.
@@ -584,9 +590,8 @@ already lists the work agents have handed back.
 **Does a task in `review` count as progress for its project?** Yes, so the stalled check
 does not nag about work that is genuinely moving.
 
-**Where did the terminal interface go?** The web app replaced it. The weekly review walk
-and the projects view have not been rebuilt in the browser yet; `omni weekly` and
-`omni project` cover them from the command line.
+**Where did the terminal interface go?** The web app replaced it. Managing projects —
+creating, renaming, completing — is still command-line only, through `omni project`.
 
 ## Development
 

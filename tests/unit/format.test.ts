@@ -13,12 +13,12 @@ const NOW = '2026-09-12T11:03:00Z';
 
 describe('counting days', () => {
   test('counts by calendar day, not by elapsed hours', () => {
-    // Late tonight and early tomorrow are one day apart, not zero.
-    expect(daysUntil('2026-09-13T00:30:00Z', '2026-09-12T23:30:00Z')).toBe(1);
+    // Late tonight and early tomorrow, on the local (Chicago) calendar, are one day apart.
+    expect(daysUntil('2026-09-13T00:30:00-05:00', '2026-09-12T23:30:00-05:00')).toBe(1);
   });
 
   test('today is zero whatever the time', () => {
-    expect(daysUntil('2026-09-12T23:59:00Z', '2026-09-12T00:01:00Z')).toBe(0);
+    expect(daysUntil('2026-09-12T23:59:00-05:00', '2026-09-12T00:01:00-05:00')).toBe(0);
   });
 
   test('the past is negative', () => {

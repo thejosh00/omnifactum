@@ -37,11 +37,23 @@ export interface ReviewStep {
   /** How many things are in scope here. */
   count: number;
   /**
-   * Specific things worth acting on, as sentences. An empty list means this step is
-   * clear and can be passed over quickly.
+   * Specific things worth acting on. An empty list means this step is clear and can be
+   * passed over quickly.
    */
-  flags: string[];
+  flags: ReviewFlag[];
 }
+
+/**
+ * One thing worth acting on: a sentence, and the task it is about when it is about one,
+ * so an interface can take you straight there instead of leaving you to go looking.
+ */
+export interface ReviewFlag {
+  text: string;
+  taskId?: string;
+}
+
+const about = (file: TaskFile, text: string): ReviewFlag => ({text, taskId: file.task.id});
+const note = (text: string): ReviewFlag => ({text});
 
 export interface ReviewPlan {
   at: string;
@@ -89,7 +101,7 @@ function inboxStep(snapshot: Snapshot): ReviewStep {
     flags:
       items.length === 0
         ? []
-        : [`${items.length} item${items.length === 1 ? '' : 's'} still to be thought about`],
+        : [note(`${items.length} item${items.length === 1 ? '' : 's'} still to be thought about`)],
   };
 }
 
@@ -104,7 +116,7 @@ function reviewStep(snapshot: Snapshot): ReviewStep {
     flags: items.map(file => {
       const last = [...file.task.log].reverse().find(entry => entry.parsed);
       const who = last?.actor !== undefined && last.actor.length > 0 ? ` (${last.actor})` : '';
-      return `"${file.task.title}" is waiting on you${who}`;
+      return about(file, `"${file.task.title}" is waiting on you${who}`);
     }),
   };
 }
@@ -114,11 +126,11 @@ function nextStep(snapshot: Snapshot, nowIso: string): ReviewStep {
   const overdue = items.filter(file => isOverdue(file.task, nowIso));
   const untagged = items.filter(file => file.task.tags.length === 0);
 
-  const flags: string[] = [];
-  for (const file of overdue) flags.push(`"${file.task.title}" is past its due date`);
+  const flags: ReviewFlag[] = [];
+  for (const file of overdue) flags.push(about(file, `"${file.task.title}" is past its due date`));
   if (untagged.length > 0) {
     // Not a fault, but an untagged action is one you will never find by context.
-    flags.push(`${untagged.length} action${untagged.length === 1 ? ' has' : 's have'} no tags`);
+    flags.push(note(`${untagged.length} action${untagged.length === 1 ? ' has' : 's have'} no tags`));
   }
 
   return {
@@ -134,13 +146,13 @@ function nextStep(snapshot: Snapshot, nowIso: string): ReviewStep {
 function waitingStep(snapshot: Snapshot, nowIso: string): ReviewStep {
   const items = tasksIn(snapshot, 'waiting');
 
-  const flags: string[] = [];
+  const flags: ReviewFlag[] = [];
   for (const file of items) {
     const asked = file.task.asked;
     if (asked === undefined) continue;
     const days = daysBetween(asked, nowIso);
     if (days !== undefined && days >= STALE_WAITING_DAYS) {
-      flags.push(`"${file.task.title}" has been waiting ${days} days — chase it?`);
+      flags.push(about(file, `"${file.task.title}" has been waiting ${days} days — chase it?`));
     }
   }
 
@@ -157,17 +169,17 @@ function waitingStep(snapshot: Snapshot, nowIso: string): ReviewStep {
 function projectsStep(snapshot: Snapshot): ReviewStep {
   const entries = snapshot.membership.projects.filter(e => e.project.project.state === 'active');
 
-  const flags: string[] = [];
+  const flags: ReviewFlag[] = [];
   for (const entry of entries) {
     if (entry.stalled) {
-      flags.push(`"${entry.project.project.title}" has no next action`);
+      flags.push(note(`"${entry.project.project.title}" has no next action`));
     }
     if (entry.project.project.outcome.trim().length === 0) {
-      flags.push(`"${entry.project.project.title}" has no outcome — what does done look like?`);
+      flags.push(note(`"${entry.project.project.title}" has no outcome — what does done look like?`));
     }
   }
   for (const orphan of snapshot.membership.orphans) {
-    flags.push(`"${orphan.file.task.title}" points at a project that does not exist`);
+    flags.push(about(orphan.file, `"${orphan.file.task.title}" points at a project that does not exist`));
   }
 
   return {

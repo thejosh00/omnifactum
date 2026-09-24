@@ -87,46 +87,46 @@ describe('the walk', () => {
 
 describe('what each step notices', () => {
   test('inbox flags anything still unprocessed', () => {
-    expect(step([task('a', 'inbox')], [], 'inbox').flags).toEqual([
+    expect(step([task('a', 'inbox')], [], 'inbox').flags.map(f => f.text)).toEqual([
       '1 item still to be thought about',
     ]);
   });
 
   test('an empty inbox is clear', () => {
-    expect(step([], [], 'inbox').flags).toEqual([]);
+    expect(step([], [], 'inbox').flags.map(f => f.text)).toEqual([]);
   });
 
   test('review names the work waiting on you, and who did it', () => {
     const log: LogEntry[] = [
       {at: NOW, actor: 'agent:claude-code', text: 'Installed PPD 4.2.', raw: '', parsed: true},
     ];
-    const flags = step([task('a', 'review', {title: 'Fix printer', log})], [], 'review').flags;
+    const flags = step([task('a', 'review', {title: 'Fix printer', log})], [], 'review').flags.map(f => f.text);
     expect(flags).toEqual(['"Fix printer" is waiting on you (agent:claude-code)']);
   });
 
   test('next flags an overdue action', () => {
-    const flags = step([task('a', 'next', {title: 'File taxes', due: '2026-01-01'})], [], 'next').flags;
+    const flags = step([task('a', 'next', {title: 'File taxes', due: '2026-01-01'})], [], 'next').flags.map(f => f.text);
     expect(flags).toContain('"File taxes" is past its due date');
   });
 
   test('next flags actions with no tags, which you can never find by context', () => {
-    const flags = step([task('a', 'next', {tags: []})], [], 'next').flags;
+    const flags = step([task('a', 'next', {tags: []})], [], 'next').flags.map(f => f.text);
     expect(flags).toContain('1 action has no tags');
   });
 
   test('a tagged action that is not overdue is not flagged', () => {
-    expect(step([task('a', 'next', {tags: ['home']})], [], 'next').flags).toEqual([]);
+    expect(step([task('a', 'next', {tags: ['home']})], [], 'next').flags.map(f => f.text)).toEqual([]);
   });
 
   test('waiting flags a delegation nobody has chased', () => {
     const asked = '2026-09-01'; // 11 days before NOW
-    const flags = step([task('a', 'waiting', {title: 'Invoice', asked})], [], 'waiting').flags;
+    const flags = step([task('a', 'waiting', {title: 'Invoice', asked})], [], 'waiting').flags.map(f => f.text);
     expect(flags[0]).toContain('"Invoice" has been waiting 11 days');
   });
 
   test('a recent delegation is left alone', () => {
     const asked = '2026-09-11'; // one day before NOW
-    expect(step([task('a', 'waiting', {asked})], [], 'waiting').flags).toEqual([]);
+    expect(step([task('a', 'waiting', {asked})], [], 'waiting').flags.map(f => f.text)).toEqual([]);
   });
 
   test('the staleness threshold is the documented one', () => {
@@ -137,16 +137,16 @@ describe('what each step notices', () => {
       .toISOString()
       .slice(0, 10);
 
-    expect(step([task('a', 'waiting', {asked: justUnder})], [], 'waiting').flags).toEqual([]);
-    expect(step([task('b', 'waiting', {asked: justOver})], [], 'waiting').flags).toHaveLength(1);
+    expect(step([task('a', 'waiting', {asked: justUnder})], [], 'waiting').flags.map(f => f.text)).toEqual([]);
+    expect(step([task('b', 'waiting', {asked: justOver})], [], 'waiting').flags.map(f => f.text)).toHaveLength(1);
   });
 
   test('waiting with no asked date is not guessed about', () => {
-    expect(step([task('a', 'waiting')], [], 'waiting').flags).toEqual([]);
+    expect(step([task('a', 'waiting')], [], 'waiting').flags.map(f => f.text)).toEqual([]);
   });
 
   test('projects flags a stalled one', () => {
-    const flags = step([], [project('kitchen')], 'projects').flags;
+    const flags = step([], [project('kitchen')], 'projects').flags.map(f => f.text);
     expect(flags).toContain('"kitchen" has no next action');
   });
 
@@ -155,18 +155,18 @@ describe('what each step notices', () => {
       [task('a', 'next', {title: 'Step'})],
       [project('kitchen', {outcome: ''})],
       'projects',
-    ).flags;
+    ).flags.map(f => f.text);
     expect(flags.some(f => f.includes('has no outcome'))).toBe(true);
   });
 
   test('a project with a next action and an outcome is clear', () => {
     const member = task('a', 'next');
     member.task.project = 'kitchen';
-    expect(step([member], [project('kitchen')], 'projects').flags).toEqual([]);
+    expect(step([member], [project('kitchen')], 'projects').flags.map(f => f.text)).toEqual([]);
   });
 
   test('someday is never flagged: it is a prompt to think, not a problem', () => {
-    expect(step([task('a', 'someday')], [], 'someday').flags).toEqual([]);
+    expect(step([task('a', 'someday')], [], 'someday').flags.map(f => f.text)).toEqual([]);
     expect(step([task('a', 'someday')], [], 'someday').count).toBe(1);
   });
 });

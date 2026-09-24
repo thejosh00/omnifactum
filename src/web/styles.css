@@ -797,3 +797,132 @@ code {
 .clarify-done .modal-actions {
   justify-content: center;
 }
+
+/* --- weekly review ------------------------------------------------------------- */
+
+.weekly-tab {
+  margin-left: auto;
+  gap: 8px;
+}
+.weekly-tab.due {
+  color: var(--warn);
+}
+.weekly {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 16px 14px;
+  margin-bottom: 18px;
+}
+.weekly-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.weekly-head .icon {
+  margin-left: auto;
+}
+.weekly-dots {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.weekly-dots li {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+  cursor: pointer;
+}
+.weekly-dots li.attention {
+  background: var(--warn);
+}
+.weekly-dots li.clear {
+  background: var(--accent);
+  opacity: 0.55;
+}
+.weekly-dots li.current {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  opacity: 1;
+}
+.weekly h2 {
+  margin: 8px 0 2px;
+  font-size: 19px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.weekly-count {
+  font-size: 15px;
+  font-weight: 500;
+}
+.weekly-clear {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+.weekly-prompt {
+  margin: 0;
+  color: var(--muted);
+}
+.weekly-flags {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+.weekly-flags li {
+  margin: 3px 0;
+}
+.weekly-flags li::marker {
+  color: var(--warn);
+}
+button.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+  text-align: left;
+}
+button.link:hover {
+  background: none;
+  text-decoration-color: var(--accent);
+}
+.weekly-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.weekly-finished {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.weekly-finished h2 {
+  margin: 0;
+}
+.weekly-finished p {
+  margin: 2px 0 0;
+}
+.project-row {
+  cursor: default;
+}
+.project-outcome {
+  color: var(--muted);
+}
+.project-outcome.warn {
+  color: var(--warn);
+}
+.meta.stalled {
+  color: var(--warn);
+  font-weight: 600;
+}
