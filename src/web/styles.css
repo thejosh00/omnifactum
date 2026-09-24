@@ -720,3 +720,80 @@ code {
     display: none;
   }
 }
+
+/* --- clarify ------------------------------------------------------------------- */
+
+.list-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.list-tools button {
+  white-space: nowrap;
+}
+.clarify-scrim {
+  padding-top: 10vh;
+}
+.modal.clarify {
+  width: min(560px, calc(100vw - 32px));
+  padding: 16px 22px 18px;
+}
+.clarify-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px -8px 4px 0;
+}
+.clarify-item {
+  border-left: 3px solid var(--accent);
+  padding: 2px 0 2px 12px;
+  margin-bottom: 18px;
+}
+.clarify-item h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.clarify-item p {
+  margin: 4px 0 0;
+}
+.clarify-body {
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 14px;
+}
+.clarify-question h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+.clarify-question .choices {
+  margin-top: 12px;
+}
+.clarify-question .choice {
+  text-transform: none;
+}
+.clarify-question form {
+  margin-top: 12px;
+}
+.clarify-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.clarify-foot .primary {
+  margin-left: auto;
+}
+.clarify-foot .primary + .quiet {
+  margin-left: 0;
+}
+.clarify-done {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+.clarify-done h2 {
+  font-size: 22px;
+  margin: 0 0 6px;
+}
+.clarify-done .modal-actions {
+  justify-content: center;
+}

@@ -15,7 +15,7 @@ Each account is its own set of lists, so **work** and **home** never mix.
 **Contents**
 
 - [Install and run](#install-and-run) · [Your first five minutes](#your-first-five-minutes)
-- [The six lists](#the-six-lists) · [The web app](#the-web-app) · [The command line](#the-command-line)
+- [The six lists](#the-six-lists) · [The web app](#the-web-app) · [Emptying the inbox](#emptying-the-inbox) · [The command line](#the-command-line)
 - [Projects](#projects) · [The weekly review](#the-weekly-review)
 - [Working with AI agents](#working-with-ai-agents) · [Your data](#your-data)
 - [Questions](#questions) · [Development](#development)
@@ -156,8 +156,9 @@ other two went straight to **next**, the list of things you could actually do no
 omni next
 ```
 
-**Decide what the inbox item really is**, then move it with `m` — to `next` if there is
-something to do, `someday` if not now, or delete it if nothing needs doing.
+**Decide what the inbox items really are.** Open the inbox (`1`) and press `C`, or click
+**Clarify all**. It asks a short, fixed set of questions about each item and files it for
+you — see [Emptying the inbox](#emptying-the-inbox).
 
 **Finish something.** Select it and press `x`, or:
 
@@ -205,6 +206,7 @@ it is generated from the keymap itself, so it can never be out of date.
 | `c` | capture into the inbox |
 | `x` | complete (accept, in review) |
 | `m` | move to another list |
+| `C` | clarify — the whole inbox, from the inbox |
 | `t` | edit tags |
 | `N` | record what happened |
 | `X` | delete permanently, after asking |
@@ -214,6 +216,36 @@ agent did without opening anything. **Accept** completes it; **Send back** retur
 `next` and asks why, so whoever picks it up next knows what was wrong.
 
 On a phone the lists and the task open full-screen, and the capture box sits at the top.
+
+### Emptying the inbox
+
+Capturing is easy and reviewing is a habit. Clarifying — deciding what a captured thing
+actually *is* — is the step that decides whether either was worth doing, and it is the one
+people skip. So it is a walk rather than a set of buttons: press `C` in the inbox and
+answer the questions, one item at a time.
+
+```
+Book dentist                                      3 more after this
+
+Is there anything to do about this?
+  y  yes, something has to happen
+  n  no, nothing has to happen
+```
+
+Say **yes** and it asks whether this is one action or part of a project, whether you are
+doing it or someone else is, and what context it belongs to. Say **no** and it offers
+someday/maybe or an outright delete — and nothing else, because there is no reference
+folder and no trash. Deleting asks twice.
+
+Filing one item brings up the next. `b` goes back a question, `→` leaves an item for later,
+and `esc` stops, with everything already filed staying filed. Tags an item was captured
+with are kept; your answer adds to them. Every decision is written into the task's log, so
+next month you can still see what you decided and why.
+
+If someone files or deletes an item from another device while you are partway through the
+pile, the walk notices and passes over it rather than acting on answers about how it used
+to be. From any other list, `C` (or **Clarify** on an inbox task) clarifies just that one
+task.
 
 ### It notices changes made elsewhere
 
@@ -532,9 +564,9 @@ already lists the work agents have handed back.
 **Does a task in `review` count as progress for its project?** Yes, so the stalled check
 does not nag about work that is genuinely moving.
 
-**Where did the terminal interface go?** The web app replaced it. The guided clarify
-walk, the weekly review walk and the projects view have not been rebuilt in the browser
-yet; `omni weekly` and `omni project` cover the latter two from the command line.
+**Where did the terminal interface go?** The web app replaced it. The weekly review walk
+and the projects view have not been rebuilt in the browser yet; `omni weekly` and
+`omni project` cover them from the command line.
 
 ## Development
 

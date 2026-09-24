@@ -6,10 +6,11 @@
  * `ApiError` carrying it, so a caller can tell "someone else changed this" (409, with
  * the current task attached) from "that was not allowed".
  */
-import type {TaskJson} from '../core/serialize.ts';
+import type {ClarifyOutcome} from '../core/clarify.ts';
+import type {ProjectJson, TaskJson} from '../core/serialize.ts';
 import type {TaskState} from '../core/types.ts';
 
-export type {TaskJson};
+export type {ProjectJson, TaskJson};
 
 export interface AccountInfo {
   name: string;
@@ -97,6 +98,10 @@ export const api = {
   patch: (id: string, version: number, fields: Record<string, string | null>) =>
     call<{task: TaskJson}>('PATCH', ref(id), fields, {'if-match': String(version)}).then(r => r.task),
   remove: (id: string) => call<unknown>('DELETE', ref(id)),
+  /** File a clarified item. Refused with 409 if it has left `from` in the meantime. */
+  clarify: (id: string, from: TaskState, outcome: ClarifyOutcome) =>
+    call<{task?: TaskJson; deleted?: TaskJson}>('POST', `${ref(id)}/clarify`, {from, outcome}),
+  projects: () => call<{projects: ProjectJson[]}>('GET', '/api/projects').then(r => r.projects),
 };
 
 /**

@@ -33,6 +33,7 @@ import {countsByState, type Snapshot} from '../core/snapshot.ts';
 import {normalizeTag} from '../core/tags.ts';
 import {isTaskState, taskStateList, TASK_STATES, type Task, type TaskFile, type TaskState} from '../core/types.ts';
 import {agentsDocument} from '../core/agentsDoc.ts';
+import {applyClarify, type ClarifyOutcome} from '../core/clarify.ts';
 import {
   EXIT_BUSY,
   EXIT_ERROR,
@@ -394,6 +395,63 @@ function deleteTask(ctx: ApiContext, ref: string): Response {
   });
 }
 
+/**
+ * Apply what the clarify walk decided. The walk itself runs in the browser — it is only
+ * questions — and this is the one write at the end of it, through the same
+ * `applyClarify` the terminal used, so a clarified task is filed exactly as it was there.
+ *
+ * `from` is the state the item was in when the walk reached it. If it has moved since,
+ * someone else already dealt with it, and neither a refile nor — especially — a delete
+ * should go ahead on the strength of answers given about how it used to be.
+ */
+async function clarifyTask(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
+  const input = await body(request);
+  const outcome = parseOutcome(input['outcome']);
+  const from = stringField(input, 'from');
+  if (from !== undefined && !isTaskState(from)) throw usage(`"from" must be one of ${taskStateList()}`);
+
+  return change(ctx, ref, (store, file) => {
+    if (from !== undefined && file.task.state !== from) {
+      throw new ApiError(
+        `"${file.task.title}" was moved to ${file.task.state} while you were clarifying it`,
+        EXIT_BUSY,
+        409,
+        {task: taskToJson(file)},
+      );
+    }
+    if (outcome.kind === 'discard') {
+      const removed = store.removeTask(file.task.id);
+      if (removed.kind !== 'ok') throw new ApiError('that task is no longer there', EXIT_NOT_FOUND, 404);
+      return json(ok({deleted: taskToJson(removed.file)}));
+    }
+    const filed: ClarifyOutcome =
+      outcome.project === undefined ? outcome : {...outcome, project: resolveProjectStem(store.load(), outcome.project)};
+    return settle(
+      store.updateTask(file.task.id, task => applyClarify(task, filed, {nowIso: ctx.now(), actor: ctx.caller.actor})),
+    );
+  });
+}
+
+const CLARIFY_STATES: readonly TaskState[] = ['next', 'waiting', 'someday'];
+
+function parseOutcome(value: unknown): ClarifyOutcome {
+  if (typeof value !== 'object' || value === null) throw usage('"outcome" must be an object');
+  const input = value as Record<string, unknown>;
+  if (input['kind'] === 'discard') return {kind: 'discard'};
+  if (input['kind'] !== 'file') throw usage('"outcome.kind" must be "file" or "discard"');
+
+  const state = input['state'];
+  if (typeof state !== 'string' || !(CLARIFY_STATES as readonly string[]).includes(state)) {
+    throw usage(`"outcome.state" must be one of ${CLARIFY_STATES.join(', ')}`);
+  }
+  const outcome: ClarifyOutcome = {kind: 'file', state: state as TaskState, tags: stringList(input, 'tags').map(normalizeTag)};
+  const project = stringField(input, 'project')?.trim();
+  if (project) outcome.project = project;
+  const waitingOn = stringField(input, 'waitingOn')?.trim();
+  if (waitingOn) outcome.waitingOn = waitingOn;
+  return outcome;
+}
+
 function listProjects(ctx: ApiContext): Response {
   const snapshot = storeFor(ctx).load();
   return json({
@@ -464,6 +522,8 @@ export async function handleApi(ctx: ApiContext, request: Request, url: URL): Pr
             return await noteTask(ctx, ref, request);
           case 'tags':
             return await tagTask(ctx, ref, request);
+          case 'clarify':
+            return await clarifyTask(ctx, ref, request);
         }
       }
     }

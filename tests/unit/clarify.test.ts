@@ -204,6 +204,18 @@ describe('applying an outcome', () => {
     expect(task.log[0]!.text).toBe('Clarified: this is the next action.');
   });
 
+  test('tags it already had are kept, and the answer adds to them', () => {
+    const outcome = walk('yes', 'one', 'me', 'home').outcome!;
+    const task = applyClarify({...inboxTask(), tags: ['calls', 'agent']}, outcome, {nowIso: NOW});
+    expect([...task.tags].sort()).toEqual(['agent', 'calls', 'home']);
+  });
+
+  test('an empty tags answer, or filing to someday, strips nothing', () => {
+    const captured = {...inboxTask(), tags: ['calls']};
+    expect(applyClarify(captured, walk('yes', 'one', 'me', '').outcome!, {nowIso: NOW}).tags).toEqual(['calls']);
+    expect(applyClarify(captured, walk('no', 'someday').outcome!, {nowIso: NOW}).tags).toEqual(['calls']);
+  });
+
   test('a delegation records who, and when it was asked', () => {
     const outcome = walk('yes', 'one', 'delegate', 'Priya', '').outcome!;
     const task = applyClarify(inboxTask(), outcome, {nowIso: NOW});

@@ -13,6 +13,7 @@ import {describeChange, type Change} from '../core/diff.ts';
 import {metaSegments} from '../core/format.ts';
 import {TASK_STATES, type TaskState} from '../core/types.ts';
 import {api, ApiError, listen, type AccountInfo, type ChangeEvent, type Session, type TaskJson, type TaskList} from './api.ts';
+import {Clarify} from './Clarify.tsx';
 import {Detail, type DetailActions} from './Detail.tsx';
 import {Confirm, Help, MoveMenu, Prompt, type PromptRequest} from './Dialogs.tsx';
 import {intentFor, type Intent} from './keys.ts';
@@ -130,7 +131,8 @@ type Dialog =
   | {kind: 'prompt'; request: PromptRequest}
   | {kind: 'move'; task: TaskJson}
   | {kind: 'delete'; task: TaskJson}
-  | {kind: 'help'};
+  | {kind: 'help'}
+  | {kind: 'clarify'; ids: string[]; walking: boolean};
 
 function Row({
   task,
@@ -342,6 +344,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           },
         }),
       remove: task => setDialog({kind: 'delete', task}),
+      clarify: task => setDialog({kind: 'clarify', ids: [task.id], walking: false}),
       fail: message => toast(message, 'error'),
     }),
     [act, toast],
@@ -357,6 +360,13 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
       return;
     }
     void act(() => api.move(task.id, to), `Moved to ${to}`);
+  };
+
+  /** Walk the inbox from the cursor down, then round to the top. */
+  const clarifyInbox = () => {
+    if (list !== 'inbox' || rows.length === 0) return;
+    const ids = rows.map(task => task.id);
+    setDialog({kind: 'clarify', ids: [...ids.slice(index), ...ids.slice(0, index)], walking: true});
   };
 
   const submitCapture = () => {
@@ -410,6 +420,12 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         case 'help':
           setDialog({kind: 'help'});
           return;
+        case 'clarify':
+          if (list === 'inbox' && open === undefined) {
+            clarifyInbox();
+            return;
+          }
+          break;
       }
       const target = open === undefined ? selected : (rows.find(task => task.id === open) ?? selected);
       if (target === undefined) return;
@@ -428,6 +444,9 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           return;
         case 'delete':
           actions.remove(target);
+          return;
+        case 'clarify':
+          actions.clarify(target);
           return;
       }
     },
@@ -540,15 +559,22 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
             <h1>{list}</h1>
             <p className="muted">{LIST_BLURBS[list]}</p>
           </div>
-          <input
-            ref={filterInput}
-            className="filter"
-            type="search"
-            value={query}
-            placeholder="Filter  (/)"
-            aria-label="Filter"
-            onChange={event => setQuery(event.target.value)}
-          />
+          <div className="list-tools">
+            {list === 'inbox' && rows.length > 0 && (
+              <button className="primary" onClick={clarifyInbox}>
+                Clarify {rows.length === 1 ? 'it' : `all ${rows.length}`} <kbd>C</kbd>
+              </button>
+            )}
+            <input
+              ref={filterInput}
+              className="filter"
+              type="search"
+              value={query}
+              placeholder="Filter  (/)"
+              aria-label="Filter"
+              onChange={event => setQuery(event.target.value)}
+            />
+          </div>
         </div>
         {data?.warnings.map(warning => (
           <p key={warning} className="field-error">
@@ -613,6 +639,19 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         />
       )}
       {dialog?.kind === 'help' && <Help onClose={() => setDialog(undefined)} />}
+      {dialog?.kind === 'clarify' && (
+        <Clarify
+          ids={dialog.ids}
+          walking={dialog.walking}
+          now={now}
+          toast={toast}
+          onFiled={() => {
+            void reload();
+            setRevision(value => value + 1);
+          }}
+          onClose={() => setDialog(undefined)}
+        />
+      )}
     </div>
   );
 }

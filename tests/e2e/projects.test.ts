@@ -75,6 +75,9 @@ describe('attaching actions', () => {
 
     await omni(['add', 'By id', '-p', id, '--next'], {dir: v.dir, now: NOW});
     expect(v.read('next/by-id.md')).toContain('project: renovate-the-kitchen');
+
+    await omni(['add', 'By title', '-p', 'Renovate the Kitchen', '--next'], {dir: v.dir, now: NOW});
+    expect(v.read('next/by-title.md')).toContain('project: renovate-the-kitchen');
   });
 
   test('a project that does not exist yet is kept and reported, not dropped', async () => {

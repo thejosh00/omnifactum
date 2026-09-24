@@ -229,7 +229,9 @@ export function resolveProjectRef(
     if (byId.length > 1) return {kind: 'ambiguous', candidates: byId};
   }
 
-  const byTitle = projects.filter(p => foldName(slugify(p.project.title)) === folded);
+  // Both sides slugified, so "Renovate the kitchen" as typed matches its title.
+  const typedSlug = foldName(slugify(needle));
+  const byTitle = projects.filter(p => foldName(slugify(p.project.title)) === typedSlug);
   if (byTitle.length === 1) return {kind: 'ok', project: byTitle[0]!, via: 'title'};
   if (byTitle.length > 1) return {kind: 'ambiguous', candidates: byTitle};
 

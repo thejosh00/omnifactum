@@ -27,7 +27,7 @@
  * flow be tested — every branch, every answer, the back button — without rendering a
  * screen or writing a file.
  */
-import {planMove, planSetTags, type ChangeContext} from './mutation.ts';
+import {planAddTags, planMove, type ChangeContext} from './mutation.ts';
 import {normalizeTags} from './tags.ts';
 import type {Task, TaskState} from './types.ts';
 
@@ -129,7 +129,7 @@ export const CLARIFY_QUESTIONS: Record<Exclude<ClarifyStep, 'done'>, ClarifyQues
   tags: {
     step: 'tags',
     prompt: 'Where can it be done?',
-    hint: 'The context you would be in when you look for it: home, calls, errands.',
+    hint: 'The context you would be in when you look for it: home, calls, errands. Tags it already has are kept.',
     choices: [],
     placeholder: 'tags, space separated  (enter for none)',
   },
@@ -286,11 +286,16 @@ function outcomeOf(
 /**
  * Turn an outcome into a task.
  *
- * Nothing new happens here: the tags go through `planSetTags` and the state through
+ * Nothing new happens here: the tags go through `planAddTags` and the state through
  * `planMove`, which already knows that a delegation starts now and that `defer` has no
  * business outside someday. The clarify flow decides *what*, and the planners that
  * every other path uses decide *how*, so a task filed by the walk is indistinguishable
  * from one moved by hand.
+ *
+ * Tags are added, never replaced. The item arrives with whatever it was captured with —
+ * `#calls` typed into the capture box, a tag an agent put on it — and answering "where
+ * can it be done?" is adding a context, not declaring the only ones it has. Replacing
+ * them is how an empty answer used to silently strip a captured tag.
  */
 export function applyClarify(
   task: Task,
@@ -301,7 +306,7 @@ export function applyClarify(
     throw new Error('a discarded task is deleted, not written');
   }
 
-  let next = planSetTags(task, outcome.tags);
+  let next = planAddTags(task, outcome.tags);
   if (outcome.project !== undefined) next = {...next, project: outcome.project};
   // Set before the move, because `planMove` is what decides whether a delegation's
   // fields survive the destination.

@@ -18,6 +18,7 @@ export type Intent =
   | 'tags'
   | 'note'
   | 'move'
+  | 'clarify'
   | 'delete'
   | 'filter'
   | 'help'
@@ -42,6 +43,7 @@ export const BINDINGS: Binding[] = [
   {keys: ['t'], label: 'edit tags', intent: 'tags', group: 'Acting'},
   {keys: ['N'], label: 'record what happened', intent: 'note', group: 'Acting'},
   {keys: ['m'], label: 'move to another list', intent: 'move', group: 'Acting'},
+  {keys: ['C'], label: 'clarify (the whole inbox, from the inbox)', intent: 'clarify', group: 'Acting'},
   {keys: ['X'], label: 'delete permanently', intent: 'delete', group: 'Acting'},
   {keys: ['/'], label: 'filter by tag or text', intent: 'filter', group: 'Lists'},
   ...TASK_STATES.map(

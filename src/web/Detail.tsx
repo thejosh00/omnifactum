@@ -27,6 +27,7 @@ export interface DetailActions {
   note: (task: TaskJson) => void;
   tags: (task: TaskJson) => void;
   remove: (task: TaskJson) => void;
+  clarify: (task: TaskJson) => void;
   fail: (message: string) => void;
 }
 
@@ -241,6 +242,10 @@ export function Detail({
             </button>
             <button onClick={() => actions.sendBack(task)}>Send back…</button>
           </>
+        ) : task.state === 'inbox' ? (
+          <button className="primary" onClick={() => actions.clarify(task)}>
+            Clarify <kbd>C</kbd>
+          </button>
         ) : task.state !== 'done' ? (
           <button className="primary" onClick={() => actions.complete(task)}>
             Complete <kbd>x</kbd>
