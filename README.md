@@ -3,10 +3,15 @@
   <img alt="omnifactum" src="assets/wordmark-light.svg" width="420">
 </picture>
 
-A Getting Things Done task manager that runs on your own network. One small server holds
-your lists; you work them from a browser on any device in the house, and AI agents work
-them through a JSON command line or HTTP API — all at the same time, without anyone
-overwriting anyone else.
+A Getting Things Done task manager built for you and your AI agents to work from together.
+One small server on your own network holds the lists; you work them from a browser on any
+device in the house, and agents work the same lists through a JSON command line or HTTP
+API — all at the same time, without anyone overwriting anyone else.
+
+The split is deliberate. You capture, clarify and decide what is worth doing; tag a task
+`agent` and it is fair game. An agent picks it up, does it, and hands it back to a
+`review` list with a note saying what it did. Nothing an agent touches counts as finished
+until you have read it and accepted it — or sent it back with a reason.
 
 Each account is its own set of lists, so **work** and **home** never mix.
 
@@ -477,8 +482,10 @@ which is what makes "what have I not looked at in a month" answerable later.
 
 ## Working with AI agents
 
-`omni` has no AI features of its own. It is the filing cabinet; an agent is just another
-actor that can open the drawer.
+`omni` has no AI features of its own, and does not need any. It is the shared desk: you
+and your agents work from the same lists, every change says who made it, and the one
+decision an agent never gets to make — that something is finished — stays with you.
+The rest of this section is how that is enforced.
 
 **Give each agent its own token**, so the log says which one did what and it cannot pass
 itself off as you:
@@ -508,6 +515,21 @@ cp -r skills/omni-work ~/.claude/skills/
 ```
 
 Then `/omni-work`, or just ask for the task queue to be worked.
+
+**To keep it working over time**, run the skill under
+[otto](https://github.com/thejosh00/otto). A Claude Code session stops when it runs out
+of work or you close the terminal; otto instead wakes a fresh `claude` on a schedule, keeps
+the run's state on disk between wakes, and picks back up after a reboot. Tag something
+`agent` in the morning and it is in `review` by the evening, without anyone starting a
+session:
+
+```bash
+otto run --skill omni-work --perpetual --period 4h \
+         --goal "Work the omni tasks tagged agent, and submit each for review"
+```
+
+The wakes need the agent's `OMNI_TOKEN` (and `OMNI_URL`, if the server is on another
+machine) in their environment. `otto ls` shows the run, and `otto stop` retires it.
 
 **Mark work as fair game** by tagging it `agent`. Agents are told to take work only from
 `next` — never from `inbox` (not thought about yet), `someday` (deliberately not now),
