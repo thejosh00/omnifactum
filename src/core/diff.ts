@@ -13,7 +13,7 @@ import {latestEntry} from './log.ts';
 import type {Snapshot} from './snapshot.ts';
 import type {ProjectState, Task, TaskFile, TaskState} from './types.ts';
 
-export type ChangeKind = 'completed' | 'added' | 'moved' | 'edited' | 'removed';
+export type ChangeKind = 'completed' | 'added' | 'moved' | 'edited' | 'reordered' | 'removed';
 
 export interface Change {
   kind: ChangeKind;
@@ -112,6 +112,8 @@ export function describeChange(change: Change): string {
       return `"${change.title}" was added${by(change)}`;
     case 'edited':
       return `"${change.title}" was edited${by(change)}`;
+    case 'reordered':
+      return `"${change.title}" was moved within ${change.to}${by(change)}`;
     case 'removed':
       return `"${change.title}" was deleted`;
   }

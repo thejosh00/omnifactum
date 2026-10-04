@@ -11,6 +11,8 @@ export type Intent =
   | 'up'
   | 'top'
   | 'bottom'
+  | 'raise'
+  | 'lower'
   | 'open'
   | 'close'
   | 'complete'
@@ -41,6 +43,8 @@ export const BINDINGS: Binding[] = [
   {keys: ['k', 'ArrowUp'], label: 'previous task', intent: 'up', group: 'Moving'},
   {keys: ['g'], label: 'first task', intent: 'top', group: 'Moving'},
   {keys: ['G'], label: 'last task', intent: 'bottom', group: 'Moving'},
+  {keys: ['K'], label: 'move the task up the list', intent: 'raise', group: 'Moving'},
+  {keys: ['J'], label: 'move the task down the list', intent: 'lower', group: 'Moving'},
   {keys: ['Enter', 'o'], label: 'open the task', intent: 'open', group: 'Moving'},
   {keys: ['Escape'], label: 'close, or clear the filter', intent: 'close', group: 'Moving'},
   {keys: ['x'], label: 'complete (accept, in review)', intent: 'complete', group: 'Acting'},

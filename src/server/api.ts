@@ -337,6 +337,22 @@ async function noteTask(ctx: ApiContext, ref: string, request: Request): Promise
   );
 }
 
+/** Put a task just before or after another in its list: `{"before": ref}` or `{"after": ref}`. */
+async function placeTask(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
+  const input = await body(request);
+  const before = stringField(input, 'before');
+  const after = stringField(input, 'after');
+  if ((before === undefined) === (after === undefined)) throw usage('give one of "before" or "after"');
+
+  return change(ctx, ref, (store, file) => {
+    const anchor = requireFile(store.load(), (before ?? after)!);
+    const place = before === undefined ? {after: anchor.task.id} : {before: anchor.task.id};
+    const result = store.placeTask(file.task.id, place);
+    if (result.kind === 'failed') throw new ApiError(result.reason, EXIT_ERROR, 409, {task: taskToJson(file)});
+    return settle(result);
+  });
+}
+
 async function tagTask(ctx: ApiContext, ref: string, request: Request): Promise<Response> {
   const input = await body(request);
   const add = stringList(input, 'add').map(normalizeTag);
@@ -707,6 +723,8 @@ export async function handleApi(ctx: ApiContext, request: Request, url: URL): Pr
             return await noteTask(ctx, ref, request);
           case 'tags':
             return await tagTask(ctx, ref, request);
+          case 'place':
+            return await placeTask(ctx, ref, request);
           case 'clarify':
             return await clarifyTask(ctx, ref, request);
         }

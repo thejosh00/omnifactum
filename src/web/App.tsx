@@ -152,7 +152,7 @@ type Dialog =
 type Page = 'lists' | 'projects' | 'tickler';
 
 /** Keys that act on the task list, which mean nothing on the projects page. */
-const TASK_LIST_INTENTS = new Set<Intent>(['down', 'up', 'top', 'bottom', 'open', 'complete', 'move', 'note', 'tags', 'delete', 'clarify']);
+const TASK_LIST_INTENTS = new Set<Intent>(['down', 'up', 'top', 'bottom', 'raise', 'lower', 'open', 'complete', 'move', 'note', 'tags', 'delete', 'clarify']);
 
 function Row({
   task,
@@ -162,6 +162,7 @@ function Row({
   onSelect,
   onOpen,
   onOpenProject,
+  drag,
 }: {
   task: TaskJson;
   selected: boolean;
@@ -170,7 +171,10 @@ function Row({
   onSelect: () => void;
   onOpen: () => void;
   onOpenProject: (ref: string) => void;
+  /** Present when the list can be put in order by hand. */
+  drag?: RowDrag;
 }) {
+  const [drop, setDrop] = useState<'before' | 'after'>();
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({block: 'nearest'});
@@ -193,10 +197,29 @@ function Row({
   return (
     <li
       ref={ref}
-      className={selected ? 'row selected' : 'row'}
+      className={`row${selected ? ' selected' : ''}${drop === undefined ? '' : ` drop-${drop}`}`}
       aria-selected={selected}
       onMouseDown={onSelect}
       onClick={onOpen}
+      draggable={drag !== undefined}
+      onDragStart={event => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', task.id);
+        drag?.onStart(task.id);
+      }}
+      onDragEnd={() => drag?.onStart(undefined)}
+      onDragOver={event => {
+        if (drag?.dragging === undefined || drag.dragging === task.id) return;
+        event.preventDefault();
+        const box = event.currentTarget.getBoundingClientRect();
+        setDrop(event.clientY < box.top + box.height / 2 ? 'before' : 'after');
+      }}
+      onDragLeave={() => setDrop(undefined)}
+      onDrop={event => {
+        event.preventDefault();
+        setDrop(undefined);
+        if (drag?.dragging !== undefined && drop !== undefined) drag.onDrop(drag.dragging, {[drop]: task.id} as Place);
+      }}
     >
       <span className="row-title">{task.title}</span>
       <span className="row-meta">
@@ -228,6 +251,26 @@ function Row({
       {list === 'review' && latest !== undefined && <span className="row-note">{latest.text}</span>}
     </li>
   );
+}
+
+type Place = {before: string} | {after: string};
+
+interface RowDrag {
+  /** The task being dragged, if any. */
+  dragging: string | undefined;
+  onStart: (id: string | undefined) => void;
+  onDrop: (id: string, place: Place) => void;
+}
+
+/** The rows with `id` taken out and put back before or after another, as the server will. */
+function reordered(rows: TaskJson[], id: string, place: Place): TaskJson[] {
+  const moving = rows.find(task => task.id === id);
+  if (moving === undefined) return rows;
+  const rest = rows.filter(task => task.id !== id);
+  const anchor = rest.findIndex(task => task.id === ('before' in place ? place.before : place.after));
+  if (anchor === -1) return rows;
+  rest.splice('before' in place ? anchor : anchor + 1, 0, moving);
+  return rest;
 }
 
 /** How the capture line will be read, shown while you type it, so nothing is a surprise. */
@@ -409,6 +452,23 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
     [reload, toast],
   );
 
+  // Done is ordered by when things finished, so only the working lists can be arranged.
+  const orderable = list !== 'done';
+  const [dragging, setDragging] = useState<string>();
+
+  /** Move a task within the list: shown at once, then confirmed by the server. */
+  const place = useCallback(
+    (id: string, where: Place) => {
+      setData(current => (current === undefined ? current : {...current, tasks: reordered(current.tasks, id, where)}));
+      setCursor(id);
+      void api.place(id, where).catch(failure => {
+        toast(failure instanceof Error ? failure.message : String(failure), 'error');
+        void reload();
+      });
+    },
+    [reload, toast],
+  );
+
   const actions: DetailActions = useMemo(
     () => ({
       complete: task => {
@@ -544,6 +604,12 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
         case 'bottom':
           setCursor(rows.at(-1)?.id);
           return;
+        case 'raise':
+          if (orderable && selected !== undefined && index > 0) place(selected.id, {before: rows[index - 1]!.id});
+          return;
+        case 'lower':
+          if (orderable && selected !== undefined && index < rows.length - 1) place(selected.id, {after: rows[index + 1]!.id});
+          return;
         case 'open':
           if (selected !== undefined) openTask(selected.id);
           return;
@@ -603,7 +669,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           return;
       }
     },
-    [rows, index, selected, open, openProject, page, query, actions, walk, weekly, stepTo, finishWeekly, openTask, showList],
+    [rows, index, selected, open, openProject, page, query, actions, walk, weekly, stepTo, finishWeekly, openTask, showList, orderable, place],
   );
 
   useEffect(() => {
@@ -803,6 +869,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
                 onSelect={() => setCursor(task.id)}
                 onOpen={() => openTask(task.id)}
                 onOpenProject={openProjectPanel}
+                drag={orderable ? {dragging, onStart: setDragging, onDrop: place} : undefined}
               />
             ))}
           </ul>

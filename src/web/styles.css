@@ -370,6 +370,12 @@ code {
 .row:hover {
   background: var(--surface-2);
 }
+.row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 .row.selected {
   background: var(--accent-soft);
   border-left-color: var(--accent);

@@ -241,7 +241,7 @@ export class Store {
         .all(accountId) as LogRow[],
     );
     const tasks = (
-      this.db.query('SELECT * FROM tasks WHERE account_id = ? ORDER BY id').all(accountId) as TaskRow[]
+      this.db.query('SELECT * FROM tasks WHERE account_id = ? ORDER BY rank, id').all(accountId) as TaskRow[]
     ).map(row => rowToTask(row, taskLogs.get(row.id) ?? []));
 
     const projectLogs = groupLogs(
@@ -421,16 +421,24 @@ export class Store {
     ] as const;
   }
 
+  /** A rank below every task in the account, so a task given it lands at the end of its list. */
+  private endRank(): number {
+    const row = this.db
+      .query('SELECT MAX(rank) AS last FROM tasks WHERE account_id = ?')
+      .get(this.account.id) as {last: number | null};
+    return Math.floor(row.last ?? 0) + 1;
+  }
+
   /** Insert a brand-new task. Fails if the id is already taken in this account. */
   private insertTask(task: Task, stem?: string): TaskFile {
     const chosen = uniqueStem(stem ?? stemFor(task.title, task.id), this.takenStems('tasks'));
     this.db
       .query(
         `INSERT INTO tasks (account_id, id, stem, title, state, tags, project, created, due,
-                            defer, waiting_on, asked, done, body, version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                            defer, waiting_on, asked, done, body, version, rank)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       )
-      .run(this.account.id, task.id, chosen, ...this.taskValues(task));
+      .run(this.account.id, task.id, chosen, ...this.taskValues(task), this.endRank());
     this.writeTaskLog(task);
     this.record(undefined, task, true);
     return {task, stem: chosen, version: 1};
@@ -501,9 +509,78 @@ export class Store {
          WHERE account_id = ? AND id = ?`,
       )
       .run(stem, ...this.taskValues(next), this.account.id, current.task.id);
+    // A task arriving in a list joins the end of it, rather than reappearing wherever
+    // it happened to sit the last time it was there.
+    if (next.state !== current.task.state) {
+      this.db
+        .query('UPDATE tasks SET rank = ? WHERE account_id = ? AND id = ?')
+        .run(this.endRank(), this.account.id, current.task.id);
+    }
     this.writeTaskLog(next);
     this.record(current.task, next, true);
     return {task: next, stem, version: current.version + 1};
+  }
+
+  /**
+   * Put a task just before or just after another task in the same list.
+   *
+   * Order is not part of the task, so this leaves its version alone: someone editing
+   * the task's fields in another window is not refused because it was dragged.
+   */
+  placeTask(id: string, place: {before: string} | {after: string}): Updated<TaskFile> {
+    return this.batch(() => {
+      const current = this.getTask(id);
+      if (current === undefined) return {kind: 'not-found'} as const;
+      const anchorId = 'before' in place ? place.before : place.after;
+      if (anchorId === id) return {kind: 'ok', file: current} as const;
+      const anchor = this.getTask(anchorId);
+      if (anchor === undefined) return {kind: 'not-found'} as const;
+      if (anchor.task.state !== current.task.state) {
+        return {kind: 'failed', reason: `"${anchor.task.title}" is not in ${current.task.state}`} as const;
+      }
+
+      const rank = this.rankBeside(id, anchorId, current.task.state, 'before' in place);
+      this.db.query('UPDATE tasks SET rank = ? WHERE account_id = ? AND id = ?').run(rank, this.account.id, id);
+      this.announce(
+        {kind: 'reordered', id, title: current.task.title, to: current.task.state, actor: this.actor},
+        'task',
+      );
+      return {kind: 'ok', file: current} as const;
+    });
+  }
+
+  /** A rank that falls between the anchor and its neighbour on the chosen side. */
+  private rankBeside(id: string, anchorId: string, state: TaskState, before: boolean): number {
+    const ranks = () =>
+      this.db
+        .query('SELECT id, rank FROM tasks WHERE account_id = ? AND state = ? AND id != ? ORDER BY rank, id')
+        .all(this.account.id, state, id) as Array<{id: string; rank: number}>;
+
+    let rows = ranks();
+    let at = rows.findIndex(row => row.id === anchorId);
+    let low = before ? rows[at - 1]?.rank : rows[at]!.rank;
+    let high = before ? rows[at]!.rank : rows[at + 1]?.rank;
+    // Halving a gap again and again eventually runs out of precision, and two tasks
+    // can share a rank; either way, spread the account out evenly and look again.
+    if (low !== undefined && high !== undefined && !(high - low > 1e-6)) {
+      this.renumber();
+      rows = ranks();
+      at = rows.findIndex(row => row.id === anchorId);
+      low = before ? rows[at - 1]?.rank : rows[at]!.rank;
+      high = before ? rows[at]!.rank : rows[at + 1]?.rank;
+    }
+    if (low === undefined) return high! - 1;
+    if (high === undefined) return low + 1;
+    return (low + high) / 2;
+  }
+
+  /** Give every task in the account a whole-number rank, keeping their order. */
+  private renumber(): void {
+    const rows = this.db
+      .query('SELECT id FROM tasks WHERE account_id = ? ORDER BY rank, id')
+      .all(this.account.id) as Array<{id: string}>;
+    const update = this.db.query('UPDATE tasks SET rank = ? WHERE account_id = ? AND id = ?');
+    rows.forEach((row, index) => update.run(index + 1, this.account.id, row.id));
   }
 
   /**

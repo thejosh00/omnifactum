@@ -37,7 +37,7 @@ export interface ChangeEvent {
   at: string;
   /** Whether a task, a project or a tickler item changed. */
   entity: 'task' | 'project' | 'tickler';
-  kind: 'completed' | 'added' | 'moved' | 'edited' | 'removed';
+  kind: 'completed' | 'added' | 'moved' | 'edited' | 'reordered' | 'removed';
   id: string;
   title: string;
   from?: string;
@@ -144,6 +144,9 @@ export const api = {
   note: (id: string, note: string) => call<{task: TaskJson}>('POST', `${ref(id)}/note`, {note}).then(r => r.task),
   tags: (id: string, add: string[], remove: string[]) =>
     call<{task: TaskJson}>('POST', `${ref(id)}/tags`, {add, remove}).then(r => r.task),
+  /** Put a task just before or after another task in its list. */
+  place: (id: string, place: {before: string} | {after: string}) =>
+    call<{task: TaskJson}>('POST', `${ref(id)}/place`, place).then(r => r.task),
   /** Replace fields. Refused with a 409 `ApiError` if the task moved past `version`. */
   patch: (id: string, version: number, fields: Record<string, string | null>) =>
     call<{task: TaskJson}>('PATCH', ref(id), fields, {'if-match': String(version)}).then(r => r.task),

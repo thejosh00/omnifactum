@@ -170,6 +170,57 @@ describe('the database store', () => {
     expect(sweepTickler(s, NOW)).toBe(0);
   });
 
+  test('a list can be put in order by hand, without touching the tasks themselves', () => {
+    const {store, hub, work} = setup();
+    const s = store();
+    const [a, b, c] = ['A', 'B', 'C'].map(title => add(s, title));
+    const titles = () => s.load().byState.get('next')!.map(file => file.task.title);
+    expect(titles()).toEqual(['A', 'B', 'C']);
+
+    const heard: StoredEvent[] = [];
+    hub.subscribe(work.id, event => heard.push(event));
+    expect(s.placeTask(c!.task.id, {before: a!.task.id}).kind).toBe('ok');
+    expect(titles()).toEqual(['C', 'A', 'B']);
+    expect(s.placeTask(c!.task.id, {after: b!.task.id}).kind).toBe('ok');
+    expect(titles()).toEqual(['A', 'B', 'C']);
+    expect(s.placeTask(a!.task.id, {after: b!.task.id}).kind).toBe('ok');
+    expect(titles()).toEqual(['B', 'A', 'C']);
+
+    expect(s.getTask(a!.task.id)!.version).toBe(1);
+    expect(heard.map(e => e.change.kind)).toEqual(['reordered', 'reordered', 'reordered']);
+  });
+
+  test('keeps working after many moves into the same gap', () => {
+    const {store} = setup();
+    const s = store();
+    const [a, b] = [add(s, 'A'), add(s, 'B')];
+    const moving = Array.from({length: 80}, (_, i) => add(s, `M${i}`));
+    // Each one lands right after A, halving the gap between A and the last one placed.
+    for (const file of moving) s.placeTask(file.task.id, {after: a.task.id});
+    const titles = s.load().byState.get('next')!.map(file => file.task.title);
+    expect(titles[0]).toBe('A');
+    expect(titles.slice(1, 81)).toEqual(moving.map(file => file.task.title).reverse());
+    expect(titles.at(-1)).toBe('B');
+    void b;
+  });
+
+  test('a task arriving in a list joins the end of it', () => {
+    const {store} = setup();
+    const s = store();
+    const old = add(s, 'Old', 'someday');
+    add(s, 'Newer');
+    s.updateTask(old.task.id, task => planMove(task, 'next', {nowIso: NOW}));
+    expect(s.load().byState.get('next')!.map(file => file.task.title)).toEqual(['Newer', 'Old']);
+  });
+
+  test('placing beside a task in another list is refused', () => {
+    const {store} = setup();
+    const s = store();
+    const a = add(s, 'A');
+    const b = add(s, 'B', 'someday');
+    expect(s.placeTask(a.task.id, {before: b.task.id}).kind).toBe('failed');
+  });
+
   test('deleting a task takes its log with it', () => {
     const {store, db} = setup();
     const s = store();

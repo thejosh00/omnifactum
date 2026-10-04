@@ -132,4 +132,16 @@ describe('tags over HTTP, for autocomplete', () => {
     expect(tags.find(t => t.tag === 'calls')?.count).toBe(2);
     expect(tags.find(t => t.tag === 'work')?.count).toBe(1);
   });
+
+  test('tasks can be placed before or after one another in their list', async () => {
+    const {call} = setup();
+    for (const title of ['First', 'Second', 'Third']) await call('POST', '/api/tasks', {title, state: 'next'});
+    const order = async () => (await call('GET', '/api/tasks?state=next')).body['tasks'].map((t: any) => t.title);
+
+    expect((await call('POST', '/api/tasks/third/place', {before: 'first'})).status).toBe(200);
+    expect(await order()).toEqual(['Third', 'First', 'Second']);
+    expect((await call('POST', '/api/tasks/third/place', {after: 'second'})).status).toBe(200);
+    expect(await order()).toEqual(['First', 'Second', 'Third']);
+    expect((await call('POST', '/api/tasks/third/place', {})).status).toBe(400);
+  });
 });

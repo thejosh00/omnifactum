@@ -141,6 +141,15 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (account_id, id)
   );
   `,
+  // Where a task sits in its list, so a person can put their lists in order. Existing
+  // tasks keep the creation order they were shown in.
+  `
+  ALTER TABLE tasks ADD COLUMN rank REAL NOT NULL DEFAULT 0;
+  UPDATE tasks SET rank = (
+    SELECT COUNT(*) FROM tasks AS earlier
+    WHERE earlier.account_id = tasks.account_id AND earlier.id <= tasks.id
+  );
+  `,
 ];
 
 export interface OpenOptions {
