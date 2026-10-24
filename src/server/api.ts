@@ -58,6 +58,7 @@ import {
 import {Store, type Updated} from '../db/store.ts';
 import {planToJson, recordWeekly, weeklyState} from '../db/weekly.ts';
 import type {Caller} from '../db/auth.ts';
+import {BOTH, refusalMessage, roleOf, YOU_ONLY, type Role} from '../core/roles.ts';
 
 export interface ApiContext {
   db: Database;
@@ -285,15 +286,9 @@ async function moveTask(ctx: ApiContext, ref: string, request: Request): Promise
 }
 
 function completeTask(ctx: ApiContext, ref: string, input: Record<string, unknown>): Response {
-  // Accepting work is a person's call; the same rule as `omni done`.
-  if (ctx.caller.actor.startsWith('agent:') && input['force'] !== true) {
-    throw new ApiError(
-      'agents hand work back for review rather than completing it; use submit',
-      EXIT_USAGE,
-      403,
-      {hint: `POST /api/tasks/${ref}/submit with a note (or "force": true to override)`},
-    );
-  }
+  // Accepting work is a person's call. The route declarations refuse an agent before it
+  // gets here (both `done` and `move` to done); this is the backstop if one ever doesn't.
+  if (roleOf(ctx.caller.actor) !== 'you') throw refused('completing a task', YOU_ONLY, ref);
   const note = stringField(input, 'note');
 
   return change(ctx, ref, (store, file) => {
@@ -693,82 +688,170 @@ function deleteTicklerRoute(ctx: ApiContext, ref: string): Response {
   return json(ok({deleted: ticklerToJson(removed.file)}));
 }
 
+/** The refusal envelope: exit 2, HTTP 403, and where the agent should go instead. */
+function refused(what: string, allow: readonly Role[] | undefined, ref?: string): ApiError {
+  return new ApiError(refusalMessage(what, allow), EXIT_USAGE, 403, {
+    refused: true,
+    hint:
+      ref === undefined
+        ? 'agents hand work back for a person to finish: POST /api/tasks/<task>/submit with a note'
+        : `agents hand work back for review rather than completing it; use submit: POST /api/tasks/${ref}/submit with a note`,
+  });
+}
+
+interface Params {
+  ref: string;
+}
+
+export interface Route {
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  /** The path with `:ref` for the task, project or tickler, e.g. `/api/tasks/:ref/move`. */
+  path: string;
+  /** What it does, for refusals. */
+  what: string;
+  /**
+   * Who may call it. GETs read and are open to every caller. Any other route without a
+   * declaration is refused for everyone — nobody's — so a new write is closed until
+   * someone decides who it is for.
+   */
+  allow?: readonly Role[];
+  /**
+   * For a route an agent may call in general but not with every body (`move` to done,
+   * clarify by discarding): what the agent asked for that is not theirs, or undefined.
+   */
+  agentRefuses?: (input: Record<string, unknown>) => string | undefined;
+  handler: (ctx: ApiContext, params: Params, request: Request, url: URL) => Response | Promise<Response>;
+}
+
+const discarding = (input: Record<string, unknown>) => {
+  const outcome = input['outcome'];
+  return typeof outcome === 'object' && outcome !== null && (outcome as Record<string, unknown>)['kind'] === 'discard';
+};
+
+/** Every route the API answers, with who may call it. */
+export const ROUTES: readonly Route[] = [
+  {method: 'GET', path: '/api/tasks', what: 'listing tasks', handler: (ctx, _p, _r, url) => listTasks(ctx, url)},
+  {
+    method: 'POST',
+    path: '/api/tasks',
+    what: 'capturing a task',
+    allow: BOTH,
+    agentRefuses: input => (input['state'] === 'done' ? 'capturing a task straight into done' : undefined),
+    handler: (ctx, _p, request) => createTask(ctx, request),
+  },
+  {method: 'GET', path: '/api/tasks/:ref', what: 'reading a task', handler: (ctx, p) => showTask(ctx, p.ref)},
+  {method: 'PATCH', path: '/api/tasks/:ref', what: 'editing a task', allow: BOTH, handler: (ctx, p, request) => patchTask(ctx, p.ref, request)},
+  {method: 'DELETE', path: '/api/tasks/:ref', what: 'deleting a task', allow: YOU_ONLY, handler: (ctx, p) => deleteTask(ctx, p.ref)},
+  {
+    method: 'POST',
+    path: '/api/tasks/:ref/move',
+    what: 'moving a task',
+    allow: BOTH,
+    agentRefuses: input => (input['to'] === 'done' ? 'moving a task to done' : undefined),
+    handler: (ctx, p, request) => moveTask(ctx, p.ref, request),
+  },
+  {
+    method: 'POST',
+    path: '/api/tasks/:ref/done',
+    what: 'completing a task',
+    allow: YOU_ONLY,
+    handler: async (ctx, p, request) => completeTask(ctx, p.ref, await body(request)),
+  },
+  {method: 'POST', path: '/api/tasks/:ref/submit', what: 'submitting a task', allow: BOTH, handler: (ctx, p, request) => submitTask(ctx, p.ref, request)},
+  {method: 'POST', path: '/api/tasks/:ref/note', what: 'adding a note', allow: BOTH, handler: (ctx, p, request) => noteTask(ctx, p.ref, request)},
+  {method: 'POST', path: '/api/tasks/:ref/tags', what: 'changing tags', allow: BOTH, handler: (ctx, p, request) => tagTask(ctx, p.ref, request)},
+  {method: 'POST', path: '/api/tasks/:ref/place', what: 'reordering a list', allow: YOU_ONLY, handler: (ctx, p, request) => placeTask(ctx, p.ref, request)},
+  {
+    method: 'POST',
+    path: '/api/tasks/:ref/clarify',
+    what: 'clarifying a task',
+    allow: BOTH,
+    agentRefuses: input => (discarding(input) ? 'discarding a task while clarifying it' : undefined),
+    handler: (ctx, p, request) => clarifyTask(ctx, p.ref, request),
+  },
+  {method: 'GET', path: '/api/projects', what: 'listing projects', handler: ctx => listProjects(ctx)},
+  {method: 'POST', path: '/api/projects', what: 'starting a project', allow: YOU_ONLY, handler: (ctx, _p, request) => createProjectRoute(ctx, request)},
+  {method: 'GET', path: '/api/projects/:ref', what: 'reading a project', handler: (ctx, p) => showProject(ctx, p.ref)},
+  {method: 'PATCH', path: '/api/projects/:ref', what: 'editing a project', allow: YOU_ONLY, handler: (ctx, p, request) => patchProject(ctx, p.ref, request)},
+  {method: 'POST', path: '/api/projects/:ref/rename', what: 'renaming a project', allow: YOU_ONLY, handler: (ctx, p, request) => renameProjectRoute(ctx, p.ref, request)},
+  {method: 'POST', path: '/api/projects/:ref/move', what: 'moving a project', allow: YOU_ONLY, handler: (ctx, p, request) => moveProjectRoute(ctx, p.ref, request)},
+  {method: 'GET', path: '/api/ticklers', what: 'listing tickler items', handler: ctx => listTicklersRoute(ctx)},
+  {method: 'POST', path: '/api/ticklers', what: 'creating a tickler item', allow: YOU_ONLY, handler: (ctx, _p, request) => createTicklerRoute(ctx, request)},
+  {method: 'PATCH', path: '/api/ticklers/:ref', what: 'editing a tickler item', allow: YOU_ONLY, handler: (ctx, p, request) => patchTicklerRoute(ctx, p.ref, request)},
+  {method: 'DELETE', path: '/api/ticklers/:ref', what: 'deleting a tickler item', allow: YOU_ONLY, handler: (ctx, p) => deleteTicklerRoute(ctx, p.ref)},
+  {
+    method: 'GET',
+    path: '/api/weekly',
+    what: 'reading the weekly review',
+    handler: ctx => json({ok: true, ...planToJson(weeklyState(storeFor(ctx), ctx.now()))}),
+  },
+  {
+    method: 'POST',
+    path: '/api/weekly/record',
+    what: 'recording the weekly review',
+    allow: YOU_ONLY,
+    handler: ctx => {
+      const {plan, stamped} = recordWeekly(storeFor(ctx), ctx.now());
+      return json(ok({at: plan.at, projects_stamped: stamped, needs_attention: plan.needingAttention}));
+    },
+  },
+  {
+    method: 'GET',
+    path: '/api/tags',
+    what: 'listing tags',
+    handler: ctx => {
+      const tags = storeFor(ctx).load().tags;
+      return json({ok: true, tags: tags.map(use => ({tag: use.tag, count: use.count}))});
+    },
+  },
+  {method: 'GET', path: '/api/agents', what: 'reading the agent contract', handler: () => json({ok: true, contract: agentsDocument()})},
+  {method: 'GET', path: '/api/agents/:ref', what: 'reading the agent contract', handler: () => json({ok: true, contract: agentsDocument()})},
+  // Each command declares its own roles, and the dispatcher checks them before it runs.
+  {method: 'POST', path: '/api/cli', what: 'running a command', allow: BOTH, handler: (ctx, _p, request) => cli(ctx, request)},
+];
+
+function matches(route: Route, parts: string[]): Params | undefined {
+  const pattern = route.path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
+  if (pattern.length !== parts.length) return undefined;
+  let ref = '';
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === ':ref') ref = parts[i]!;
+    else if (pattern[i] !== parts[i]) return undefined;
+  }
+  return {ref};
+}
+
+/** Refuse the caller before the handler runs, if the route is not theirs. */
+async function authorise(ctx: ApiContext, route: Route, request: Request, ref: string): Promise<void> {
+  if (route.method === 'GET') return;
+  const role = roleOf(ctx.caller.actor);
+  if (route.allow === undefined || role === undefined || !route.allow.includes(role)) {
+    throw refused(route.what, route.allow, route.what === 'completing a task' ? ref : undefined);
+  }
+  if (role !== 'agent') return;
+  // Peek at the body without using it up; the handler reads its own copy.
+  const input = await body(request.clone());
+  // Overriding a guard is a person's decision on every route.
+  if (input['force'] === true) throw refused(`${route.what} with "force"`, YOU_ONLY);
+  const specific = route.agentRefuses?.(input);
+  if (specific !== undefined) throw refused(specific, YOU_ONLY, input['to'] === 'done' ? ref : undefined);
+}
+
 /**
  * Route one authenticated API request. Returns undefined when nothing matched, so the
  * caller can answer 404 in the same shape as everything else.
  */
 export async function handleApi(ctx: ApiContext, request: Request, url: URL): Promise<Response | undefined> {
   const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
-  const method = request.method;
-  const [resource, ref, action] = parts;
 
   try {
-    if (resource === 'tasks') {
-      if (ref === undefined) {
-        if (method === 'GET') return listTasks(ctx, url);
-        if (method === 'POST') return await createTask(ctx, request);
-      } else if (action === undefined) {
-        if (method === 'GET') return showTask(ctx, ref);
-        if (method === 'PATCH') return await patchTask(ctx, ref, request);
-        if (method === 'DELETE') return deleteTask(ctx, ref);
-      } else if (method === 'POST') {
-        switch (action) {
-          case 'move':
-            return await moveTask(ctx, ref, request);
-          case 'done':
-            return completeTask(ctx, ref, await body(request));
-          case 'submit':
-            return await submitTask(ctx, ref, request);
-          case 'note':
-            return await noteTask(ctx, ref, request);
-          case 'tags':
-            return await tagTask(ctx, ref, request);
-          case 'place':
-            return await placeTask(ctx, ref, request);
-          case 'clarify':
-            return await clarifyTask(ctx, ref, request);
-        }
-      }
+    for (const route of ROUTES) {
+      if (route.method !== request.method) continue;
+      const params = matches(route, parts);
+      if (params === undefined) continue;
+      await authorise(ctx, route, request, params.ref);
+      return await route.handler(ctx, params, request, url);
     }
-    if (resource === 'projects') {
-      if (ref === undefined) {
-        if (method === 'GET') return listProjects(ctx);
-        if (method === 'POST') return await createProjectRoute(ctx, request);
-      } else if (action === undefined) {
-        if (method === 'GET') return showProject(ctx, ref);
-        if (method === 'PATCH') return await patchProject(ctx, ref, request);
-      } else if (method === 'POST') {
-        if (action === 'rename') return await renameProjectRoute(ctx, ref, request);
-        if (action === 'move') return await moveProjectRoute(ctx, ref, request);
-      }
-    }
-    if (resource === 'ticklers') {
-      if (ref === undefined) {
-        if (method === 'GET') return listTicklersRoute(ctx);
-        if (method === 'POST') return await createTicklerRoute(ctx, request);
-      } else if (action === undefined) {
-        if (method === 'PATCH') return await patchTicklerRoute(ctx, ref, request);
-        if (method === 'DELETE') return deleteTicklerRoute(ctx, ref);
-      }
-    }
-    if (resource === 'weekly') {
-      const store = storeFor(ctx);
-      if (ref === undefined && method === 'GET') {
-        return json({ok: true, ...planToJson(weeklyState(store, ctx.now()))});
-      }
-      if (ref === 'record' && method === 'POST') {
-        const {plan, stamped} = recordWeekly(store, ctx.now());
-        return json(ok({at: plan.at, projects_stamped: stamped, needs_attention: plan.needingAttention}));
-      }
-    }
-    if (resource === 'tags' && ref === undefined && method === 'GET') {
-      const tags = storeFor(ctx).load().tags;
-      return json({ok: true, tags: tags.map(use => ({tag: use.tag, count: use.count}))});
-    }
-    if (resource === 'agents' && method === 'GET') {
-      return json({ok: true, contract: agentsDocument()});
-    }
-    if (resource === 'cli' && method === 'POST') return await cli(ctx, request);
     return undefined;
   } catch (error) {
     if (error instanceof ApiError) return errorResponse(error.message, error.code, error.status, error.extra);

@@ -10,7 +10,7 @@ import type {Database} from 'bun:sqlite';
 import type {Server} from 'bun';
 import {nowIso} from '../core/time.ts';
 import {EXIT_NOT_FOUND, EXIT_USAGE} from '../commands/context.ts';
-import {callerForSession, callerForToken, createSession, endSession, type Caller} from '../db/auth.ts';
+import {callerForSession, callerForToken, createSession, endSession, InvalidActorToken, type Caller} from '../db/auth.ts';
 import {checkPin, findAccount, listAccounts} from '../db/database.ts';
 import {EventHub, eventToJson, eventsSince, latestEventSeq} from '../db/events.ts';
 import {dailyBackup} from '../db/backup.ts';
@@ -54,11 +54,18 @@ function cookie(request: Request, name: string): string | undefined {
   return undefined;
 }
 
-function callerOf(db: Database, request: Request): Caller | undefined {
+/** The caller, undefined when nobody is signed in, or a refusal for a token with a bad actor. */
+function callerOf(db: Database, request: Request): Caller | Response | undefined {
   const auth = request.headers.get('authorization');
   if (auth !== null) {
     const match = /^Bearer\s+(.+)$/i.exec(auth.trim());
-    return match === null ? undefined : callerForToken(db, match[1]!.trim());
+    if (match === null) return undefined;
+    try {
+      return callerForToken(db, match[1]!.trim());
+    } catch (error) {
+      if (error instanceof InvalidActorToken) return errorResponse(error.message, EXIT_USAGE, 403, {refused: true});
+      throw error;
+    }
   }
   const session = cookie(request, SESSION_COOKIE);
   return session === undefined ? undefined : callerForSession(db, session);
@@ -160,6 +167,7 @@ export function startServer(options: ServeOptions): RunningServer {
         GET: request => {
           const caller = callerOf(db, request);
           if (caller === undefined) return unauthorized();
+          if (caller instanceof Response) return caller;
           return json({ok: true, account: caller.account.name, actor: caller.actor, accounts: accountsJson(db)});
         },
         POST: request => login(db, request, now),
@@ -172,6 +180,7 @@ export function startServer(options: ServeOptions): RunningServer {
       '/api/events': request => {
         const caller = callerOf(db, request);
         if (caller === undefined) return unauthorized();
+        if (caller instanceof Response) return caller;
         // An event stream is idle between changes by design; do not time it out.
         server.timeout(request, 0);
         return eventStream(db, hub, caller, request);
@@ -179,6 +188,7 @@ export function startServer(options: ServeOptions): RunningServer {
       '/api/*': async request => {
         const caller = callerOf(db, request);
         if (caller === undefined) return unauthorized();
+        if (caller instanceof Response) return caller;
         const url = new URL(request.url);
         const response = await handleApi({db, hub, caller, now}, request, url);
         return response ?? errorResponse(`no such endpoint: ${request.method} ${url.pathname}`, EXIT_NOT_FOUND, 404);

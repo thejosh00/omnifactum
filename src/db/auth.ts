@@ -9,6 +9,7 @@
 import {randomBytes} from 'node:crypto';
 import type {Database} from 'bun:sqlite';
 import {ACTOR_USER} from '../core/mutation.ts';
+import {actorProblem, isActor} from '../core/roles.ts';
 import {listAccounts, type Account} from './database.ts';
 
 export interface Caller {
@@ -29,6 +30,7 @@ function accountById(db: Database, id: number): Account | undefined {
 export function createToken(db: Database, accountId: number, actor: string, now: string): string {
   const clean = actor.trim();
   if (clean.length === 0) throw new Error('a token needs an actor, such as "you" or "agent:claude-code"');
+  if (!isActor(clean)) throw new Error(actorProblem(clean));
   const token = `omni_${secret()}`;
   db.query('INSERT INTO tokens (token, account_id, actor, created) VALUES (?, ?, ?, ?)').run(
     token,
@@ -59,13 +61,31 @@ export function revokeToken(db: Database, token: string): boolean {
   return db.query('DELETE FROM tokens WHERE token = ?').run(token).changes > 0;
 }
 
+/**
+ * A token issued before actors were checked may name someone who is neither a person
+ * nor an agent (`claude`, say). Granting it either role would be a guess, so it is
+ * refused, and the refusal says how to replace it.
+ */
+export class InvalidActorToken extends Error {
+  constructor(readonly actor: string, readonly account: string) {
+    super(
+      `this token's actor "${actor}" is neither "you" nor "agent:<name>", so it is no longer accepted. ` +
+        `Re-issue it with "omni account token ${account} agent:<name>" (or "you"), ` +
+        `and revoke the old one with "omni account revoke <token>"`,
+    );
+  }
+}
+
+/** The caller a token speaks for; throws `InvalidActorToken` for a token with a bad actor. */
 export function callerForToken(db: Database, token: string): Caller | undefined {
   const row = db.query('SELECT account_id, actor FROM tokens WHERE token = ?').get(token) as
     | {account_id: number; actor: string}
     | null;
   if (row === null) return undefined;
   const account = accountById(db, row.account_id);
-  return account === undefined ? undefined : {account, actor: row.actor};
+  if (account === undefined) return undefined;
+  if (!isActor(row.actor)) throw new InvalidActorToken(row.actor, account.name);
+  return {account, actor: row.actor};
 }
 
 export function createSession(db: Database, accountId: number, now: string): string {

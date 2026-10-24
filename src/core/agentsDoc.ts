@@ -225,15 +225,21 @@ Link a task to a project with \`-p <stem>\` when adding it.
 
 A tickler item fires weekly, monthly or once on a date, and each firing adds a task to
 \`next\` tagged \`#tickler\`. While the task from the last firing is still open, a firing
-adds nothing. To ask for a reminder:
+adds nothing. Creating, editing and deleting tickler items is the person's call, so
+an agent's token is refused for them. You can read them:
 
 \`\`\`bash
-omni tickler add "Pay the water bill" --monthly 15 --json
-omni tickler add "Check the smoke alarms" --every sat --json
-omni tickler add "Renew the passport" --on 2027-03-01 --json
+omni tickler list --json
 \`\`\`
 
+To ask for a reminder, capture a task saying what and when, for the person to set up.
+
 ## What not to do
+
+An agent's token is refused, with exit code 2, for: completing a task (\`omni done\`,
+\`omni mv <task> done\`), deleting one (\`omni rm\`, or discarding it while clarifying),
+\`--force\` on any command, recording the weekly review, writing projects, and writing
+tickler items. Those are the person's.
 
 **Do not accept your own work.** \`omni submit\` is how you finish; \`omni done\` is for
 the person reviewing it.
@@ -262,7 +268,7 @@ as above.
 | \`POST /api/tasks/<task>/tags\` \`{"add", "remove"}\` | change tags |
 | \`PATCH /api/tasks/<task>\` with \`If-Match: <version>\` | replace title, body or dates |
 | \`GET /api/projects\` | projects |
-| \`GET /api/ticklers\`, \`POST /api/ticklers\` \`{"title", "schedule"}\` | tickler items; \`schedule\` is \`weekly:mon\`, \`monthly:15\` or a date |
+| \`GET /api/ticklers\` | tickler items (writing them is the person's) |
 | \`GET /api/agents\` | this document |
 
 A \`PATCH\` replaces what is there, so it carries the task's \`version\` from when you read

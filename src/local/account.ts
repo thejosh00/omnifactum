@@ -10,6 +10,7 @@ import type {Database} from 'bun:sqlite';
 import {parseArgs, hasFlag} from '../core/args.ts';
 import {renderJson} from '../core/serialize.ts';
 import {createToken, listTokens, revokeToken} from '../db/auth.ts';
+import {actorProblem, isActor} from '../core/roles.ts';
 import {createAccount, findAccount, listAccounts, setPin} from '../db/database.ts';
 import {TOKEN_FILE} from '../client.ts';
 import {EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE} from '../commands/context.ts';
@@ -72,6 +73,7 @@ export function accountCommand(ctx: LocalContext, argv: readonly string[]): numb
       if (first === undefined || second === undefined) return failWith(ctx, USAGE, EXIT_USAGE);
       const account = findAccount(ctx.db, first);
       if (account === undefined) return failWith(ctx, `no account named "${first}"`, EXIT_NOT_FOUND);
+      if (!isActor(second.trim())) return failWith(ctx, actorProblem(second.trim()), EXIT_USAGE);
       const token = createToken(ctx.db, account.id, second, ctx.now());
       if (hasFlag(args, 'save')) writeFileSync(join(ctx.dataDir, TOKEN_FILE), `${token}\n`, {mode: 0o600});
 

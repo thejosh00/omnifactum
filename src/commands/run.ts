@@ -14,7 +14,8 @@ import {nowIso} from '../core/time.ts';
 import {isBusy} from '../db/busy.ts';
 import type {Store} from '../db/store.ts';
 import {LIST_STATES, type TaskState} from '../core/types.ts';
-import type {FlagSpec} from '../core/args.ts';
+import type {FlagSpec, ParsedArgs} from '../core/args.ts';
+import {BOTH, refusalMessage, roleOf, YOU_ONLY, type Role} from '../core/roles.ts';
 import {addCommand, ADD_FLAGS} from './add.ts';
 import {agentsCommand} from './agents.ts';
 import {dueCommand, listCommand, LIST_FLAGS} from './list.ts';
@@ -50,7 +51,25 @@ interface Entry {
   run: Command;
   flags: FlagSpec;
   summary: string;
+  /**
+   * Who may run it. Checked before the command runs; a command without one is refused
+   * for everyone, so a new command is closed until someone decides who it is for.
+   */
+  allow?: readonly Role[];
+  /**
+   * For a command an agent may run in general but not in every form (`mv … done`, say):
+   * what the agent asked for that is not theirs, or undefined when it is fine.
+   */
+  agentRefuses?: (args: ParsedArgs) => string | undefined;
 }
+
+/** Subcommands that only read, for the commands that both read and write. */
+const readOnlySubcommand =
+  (command: string, reads: readonly (string | undefined)[]) =>
+  (args: ParsedArgs): string | undefined => {
+    const [sub] = args.positional;
+    return reads.includes(sub) ? undefined : `"omni ${command} ${sub}"`;
+  };
 
 /**
  * What each per-state listing says it is for.
@@ -70,31 +89,76 @@ const LIST_SUMMARIES: Record<Exclude<TaskState, 'done'>, string> = {
 const STATE_COMMANDS: Record<string, Entry> = Object.fromEntries(
   LIST_STATES.map(state => [
     state,
-    {run: listCommand(state), flags: LIST_FLAGS, summary: LIST_SUMMARIES[state]},
+    {run: listCommand(state), flags: LIST_FLAGS, summary: LIST_SUMMARIES[state], allow: BOTH},
   ]),
 );
 
 const COMMANDS: Record<string, Entry> = {
-  add: {run: addCommand, flags: ADD_FLAGS, summary: 'capture a task'},
-  list: {run: listCommand(), flags: LIST_FLAGS, summary: 'list tasks matching a query'},
+  add: {run: addCommand, flags: ADD_FLAGS, summary: 'capture a task', allow: BOTH},
+  list: {run: listCommand(), flags: LIST_FLAGS, summary: 'list tasks matching a query', allow: BOTH},
   ...STATE_COMMANDS,
-  done: {run: doneCommand, flags: DONE_FLAGS, summary: 'accept a task as finished'},
-  submit: {run: submitCommand, flags: SUBMIT_FLAGS, summary: 'hand finished work back for review'},
-  weekly: {run: weeklyCommand, flags: WEEKLY_FLAGS, summary: 'the GTD weekly review, list by list'},
-  due: {run: dueCommand, flags: LIST_FLAGS, summary: 'deadlines, soonest first'},
-  mv: {run: moveCommand, flags: MV_FLAGS, summary: 'move a task to another state'},
-  note: {run: noteCommand, flags: NOTE_FLAGS, summary: 'record what happened, changing nothing'},
-  rm: {run: removeCommand, flags: RM_FLAGS, summary: 'delete a task permanently'},
-  tag: {run: tagCommand, flags: TAG_FLAGS, summary: 'add and remove tags'},
-  tags: {run: tagsCommand, flags: {}, summary: 'every tag in use, with counts'},
-  show: {run: showCommand, flags: {}, summary: 'print one task in full'},
-  project: {run: projectCommand, flags: PROJECT_FLAGS, summary: 'outcomes that need more than one action'},
-  tickler: {run: ticklerCommand, flags: TICKLER_FLAGS, summary: 'reminders that come back as next actions'},
-  agents: {run: agentsCommand, flags: {}, summary: 'print the contract agents read'},
+  done: {run: doneCommand, flags: DONE_FLAGS, summary: 'accept a task as finished', allow: YOU_ONLY},
+  submit: {run: submitCommand, flags: SUBMIT_FLAGS, summary: 'hand finished work back for review', allow: BOTH},
+  weekly: {
+    run: weeklyCommand,
+    flags: WEEKLY_FLAGS,
+    summary: 'the GTD weekly review, list by list',
+    allow: BOTH,
+    agentRefuses: args => (args.booleans.has('record') ? '"omni weekly --record"' : undefined),
+  },
+  due: {run: dueCommand, flags: LIST_FLAGS, summary: 'deadlines, soonest first', allow: BOTH},
+  mv: {
+    run: moveCommand,
+    flags: MV_FLAGS,
+    summary: 'move a task to another state',
+    allow: BOTH,
+    agentRefuses: args => (args.positional[1] === 'done' ? '"omni mv … done"' : undefined),
+  },
+  note: {run: noteCommand, flags: NOTE_FLAGS, summary: 'record what happened, changing nothing', allow: BOTH},
+  rm: {run: removeCommand, flags: RM_FLAGS, summary: 'delete a task permanently', allow: YOU_ONLY},
+  tag: {run: tagCommand, flags: TAG_FLAGS, summary: 'add and remove tags', allow: BOTH},
+  tags: {run: tagsCommand, flags: {}, summary: 'every tag in use, with counts', allow: BOTH},
+  show: {run: showCommand, flags: {}, summary: 'print one task in full', allow: BOTH},
+  project: {
+    run: projectCommand,
+    flags: PROJECT_FLAGS,
+    summary: 'outcomes that need more than one action',
+    allow: BOTH,
+    agentRefuses: readOnlySubcommand('project', [undefined, 'list', 'ls', 'show']),
+  },
+  tickler: {
+    run: ticklerCommand,
+    flags: TICKLER_FLAGS,
+    summary: 'reminders that come back as next actions',
+    allow: BOTH,
+    agentRefuses: readOnlySubcommand('tickler', [undefined, 'list', 'ls']),
+  },
+  agents: {run: agentsCommand, flags: {}, summary: 'print the contract agents read', allow: BOTH},
 };
 
 /** Every command name, so the contract tests can check the document only cites real ones. */
 export const COMMAND_NAMES: string[] = Object.keys(COMMANDS);
+
+/** Who may run each command, as declared; undefined for a command with no declaration. */
+export function commandRoles(): Record<string, readonly Role[] | undefined> {
+  return Object.fromEntries(Object.entries(COMMANDS).map(([name, entry]) => [name, entry.allow]));
+}
+
+/**
+ * Whether the caller's role may run this command as asked: the reason it may not, or
+ * undefined. The role comes from the token (the base store), never from `--actor`.
+ */
+function refusal(entry: Entry, name: string, role: Role | undefined, args: ParsedArgs): string | undefined {
+  const what = `"omni ${name}"`;
+  if (entry.allow === undefined || role === undefined || !entry.allow.includes(role)) {
+    return refusalMessage(what, entry.allow);
+  }
+  if (role !== 'agent') return undefined;
+  // Overriding a guard is a person's decision on every command.
+  if (args.booleans.has('force') || args.flags.has('force')) return refusalMessage(`${what} with --force`, YOU_ONLY);
+  const specific = entry.agentRefuses?.(args);
+  return specific === undefined ? undefined : refusalMessage(specific, YOU_ONLY);
+}
 
 /** Names that mean the same thing, so muscle memory from other tools works. */
 const ALIASES: Record<string, string> = {
@@ -177,6 +241,16 @@ export function runCommand(baseStore: Store, request: CommandRequest): CommandRe
   });
   if (args.errors.length > 0) {
     return done(fail(context, args.errors.join('; '), EXIT_USAGE));
+  }
+
+  const refused = refusal(entry, resolved!, roleOf(baseStore.actor), args);
+  if (refused !== undefined) {
+    return done(
+      fail(context, refused, EXIT_USAGE, {
+        refused: true,
+        hint: 'agents hand work back with "omni submit <task> --note …" for a person to finish',
+      }),
+    );
   }
 
   const flagged = args.flags.get('actor')?.[0];
