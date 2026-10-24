@@ -31,8 +31,7 @@ You need [Bun](https://bun.sh).
 
 ```bash
 brew install bun
-bun install
-bun link                 # puts `omni` on your PATH
+./install.sh             # bun install + bun link: puts `omni` on your PATH
 omni serve               # starts the server
 ```
 
@@ -77,7 +76,7 @@ Then, from the repo:
 | Command | Does |
 | --- | --- |
 | `bun run status` | whether it is running, and when it last backed up |
-| `bun run restart` | restart it — do this after changing the code |
+| `bun run restart` | restart it — do this after changing the code, or after `./install.sh` when you pull |
 | `bun run stop` | stop it until you next log in |
 | `bun run start` | start it again |
 | `bun run logs` | follow the server log |
