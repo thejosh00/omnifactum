@@ -9,6 +9,7 @@
 import type {Database} from 'bun:sqlite';
 import type {Server} from 'bun';
 import {nowIso} from '../core/time.ts';
+import {failure} from '../core/serialize.ts';
 import {EXIT_NOT_FOUND, EXIT_USAGE} from '../commands/context.ts';
 import {callerForSession, callerForToken, createSession, endSession, InvalidActorToken, type Caller} from '../db/auth.ts';
 import {checkPin, findAccount, listAccounts} from '../db/database.ts';
@@ -17,6 +18,8 @@ import {dailyBackup} from '../db/backup.ts';
 import {Store} from '../db/store.ts';
 import {sweepRecurring, sweepTickler} from '../db/tickler.ts';
 import {errorResponse, handleApi, json} from './api.ts';
+import {checkRequest} from './hostCheck.ts';
+import {PinLimiter} from './pinLimit.ts';
 import homepage from '../web/index.html';
 
 export const SESSION_COOKIE = 'omni_session';
@@ -35,6 +38,10 @@ export interface ServeOptions {
   tickler?: boolean;
   /** Take a daily backup into `<dataDir>/backups`. Off unless given. */
   backups?: {dataDir: string; log?: (line: string) => void};
+  /** Extra `Host` names to answer to besides localhost, 127.0.0.1 and [::1] (hostCheck.ts). */
+  allowedHosts?: readonly string[];
+  /** Wrong-PIN limiter; one per server unless a test gives its own. */
+  pinLimiter?: PinLimiter;
 }
 
 export interface RunningServer {
@@ -79,7 +86,19 @@ function sessionCookie(value: string, maxAge: number): string {
   return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
-async function login(db: Database, request: Request, now: () => string): Promise<Response> {
+async function login(
+  db: Database,
+  request: Request,
+  now: () => string,
+  limiter: PinLimiter,
+  address: string,
+): Promise<Response> {
+  const wait = limiter.blocked(address);
+  if (wait !== undefined) {
+    return json(failure(`too many wrong PINs from ${address}: try again in ${wait}s`, EXIT_USAGE), 429, {
+      'retry-after': String(wait),
+    });
+  }
   let input: {account?: unknown; pin?: unknown};
   try {
     input = (await request.json()) as typeof input;
@@ -89,7 +108,10 @@ async function login(db: Database, request: Request, now: () => string): Promise
   const account = typeof input.account === 'string' ? findAccount(db, input.account) : undefined;
   if (account === undefined) return errorResponse('no such account', EXIT_NOT_FOUND, 404);
   const pin = typeof input.pin === 'string' ? input.pin : undefined;
-  if (!checkPin(db, account.id, pin)) return errorResponse('wrong PIN', EXIT_USAGE, 403);
+  if (!checkPin(db, account.id, pin)) {
+    limiter.fail(address);
+    return errorResponse('wrong PIN', EXIT_USAGE, 403);
+  }
 
   const session = createSession(db, account.id, now());
   return json({ok: true, account: account.name}, 200, {'set-cookie': sessionCookie(session, 60 * 60 * 24 * 365)});
@@ -153,50 +175,59 @@ export function startServer(options: ServeOptions): RunningServer {
   const {db} = options;
   const now = options.now ?? nowIso;
   const hub = new EventHub();
+  const allowed = options.allowedHosts ?? [];
+  const limiter = options.pinLimiter ?? new PinLimiter();
 
-  const server = Bun.serve({
+  // Every request is checked before it is routed (see hostCheck.ts). The static web app
+  // bundle at "/" is served by Bun directly and carries no data, so it is not wrapped.
+  const guard =
+    (handler: (request: Request) => Response | Promise<Response>) =>
+    (request: Request): Response | Promise<Response> => {
+      const refused = checkRequest(request, server.port ?? 0, allowed);
+      return refused === undefined ? handler(request) : errorResponse(refused, EXIT_USAGE, 403);
+    };
+
+  const server: Server<undefined> = Bun.serve({
     port: options.port ?? 7777,
     hostname: options.hostname ?? '127.0.0.1',
     development: options.development ?? false,
     routes: {
       '/': homepage,
       '/api/accounts': {
-        GET: () => json({ok: true, accounts: accountsJson(db)}),
+        GET: guard(() => json({ok: true, accounts: accountsJson(db)})),
       },
       '/api/session': {
-        GET: request => {
+        GET: guard(request => {
           const caller = callerOf(db, request);
           if (caller === undefined) return unauthorized();
           if (caller instanceof Response) return caller;
           return json({ok: true, account: caller.account.name, actor: caller.actor, accounts: accountsJson(db)});
-        },
-        POST: request => login(db, request, now),
-        DELETE: request => {
+        }),
+        POST: guard(request => login(db, request, now, limiter, server.requestIP(request)?.address ?? 'unknown')),
+        DELETE: guard(request => {
           const session = cookie(request, SESSION_COOKIE);
           if (session !== undefined) endSession(db, session);
           return json({ok: true}, 200, {'set-cookie': sessionCookie('', 0)});
-        },
+        }),
       },
-      '/api/events': request => {
+      '/api/events': guard(request => {
         const caller = callerOf(db, request);
         if (caller === undefined) return unauthorized();
         if (caller instanceof Response) return caller;
         // An event stream is idle between changes by design; do not time it out.
         server.timeout(request, 0);
         return eventStream(db, hub, caller, request);
-      },
-      '/api/*': async request => {
+      }),
+      '/api/*': guard(async request => {
         const caller = callerOf(db, request);
         if (caller === undefined) return unauthorized();
         if (caller instanceof Response) return caller;
         const url = new URL(request.url);
         const response = await handleApi({db, hub, caller, now}, request, url);
         return response ?? errorResponse(`no such endpoint: ${request.method} ${url.pathname}`, EXIT_NOT_FOUND, 404);
-      },
+      }),
     },
-    fetch() {
-      return new Response('Not found', {status: 404});
-    },
+    fetch: guard(() => new Response('Not found', {status: 404})),
   });
 
   let timer: ReturnType<typeof setInterval> | undefined;
