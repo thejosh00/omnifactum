@@ -40,13 +40,28 @@ omni serve               # starts the server
 
 ```
 omni is serving /Users/you/.omnifactum/omni.db
+  listening on 127.0.0.1:7777
   on this machine:  http://localhost:7777
-  on your network:  http://192.168.1.20:7777
 ```
 
-Open either in a browser, pick **work** or **home**, and you are in. It listens on every
-interface by default so your phone and other computers can reach it; use
-`--host 127.0.0.1` to keep it to this machine, and `--port` to move it.
+Open it in a browser, pick **work** or **home**, and you are in. It listens on this machine
+only (`127.0.0.1`) by default; `--port` moves it.
+
+To reach it from your phone and other computers, listen on every interface and name the
+host they will use:
+
+```bash
+omni account pin work 4821      # every account needs a PIN first
+omni account pin home 1234
+omni serve --host 0.0.0.0 --allowed-hosts mymac.local,192.168.1.20
+```
+
+`omni serve` refuses to listen anywhere but loopback while any account has no PIN, and
+says which. The server only answers requests whose `Host` is `localhost`, `127.0.0.1` or
+`[::1]` with its port, or a name given with `--allowed-hosts` (or `OMNI_ALLOWED_HOSTS`;
+a name may carry its own port). Anything else gets a 403 that names the host it saw and
+how to allow it, as does a write from a web page on another origin. That is what stops a
+web page you visit from reaching the server through your browser.
 
 ### Keep it running
 
@@ -101,10 +116,11 @@ Copy `dist/omni` anywhere on your PATH.
 There are two accounts to start with, `work` and `home`. `omni account add <name>` makes
 more.
 
-Anyone on your network can open an account from the browser. This is meant for a home
-network, not the internet. To keep casual visitors out of an account, give it a PIN. It
-won't stop someone determined: guesses aren't limited, it isn't encrypted on the way to the
-server, and the command line doesn't ask for it.
+Over loopback, anyone using this machine can open an account from the browser. To keep
+others out of an account, give it a PIN; serving to the network requires one on every
+account. After five wrong PINs in a minute from one address, sign-in from there is refused
+(429) until the minute is up. A PIN still isn't encrypted on the way to the server (plain
+HTTP), and the command line doesn't ask for it.
 
 ```bash
 omni account pin work 4821     # the browser now asks for it
@@ -658,7 +674,8 @@ them. `omni tags` lists every one in use.
 | `OMNI_URL` | the server the CLI talks to (default `http://127.0.0.1:7777`) |
 | `OMNI_TOKEN` | the CLI's token (default: the one saved with `--save`) |
 | `OMNI_ACTOR` | who the log records, for a person's token; an agent's token ignores it |
-| `OMNI_HOST` / `OMNI_PORT` | defaults for `omni serve` |
+| `OMNI_HOST` / `OMNI_PORT` | defaults for `omni serve` (host default `127.0.0.1`) |
+| `OMNI_ALLOWED_HOSTS` | extra host names `omni serve` answers to, comma-separated (same as `--allowed-hosts`) |
 
 ## Questions
 
@@ -666,8 +683,12 @@ them. `omni tags` lists every one in use.
 suggests `omni mv <task> someday` instead, and the web app confirms before deleting. The
 nearest thing is [yesterday's backup](#backups).
 
-**Is it secure?** It is built for a home network. Anyone who can reach the server can open
-an account without a PIN, and the traffic is plain HTTP. Do not expose it to the internet.
+**Is it secure?** It is built for one machine or a home network. By default it listens on
+this machine only and answers only to its loopback names; serving to the network needs a
+PIN on every account and the names you allow. The data directory is kept to your user
+(directories 0700, the database, its backups and the token file 0600 — tightened on every
+start). Tokens are stored as-is in the database and the traffic is plain HTTP. Do not
+expose it to the internet.
 
 **Why can't agents mark things done?** Because completed work drops out of every default
 view, and noticing it would then depend on remembering to go and look. Remembering is

@@ -101,6 +101,14 @@ describe('omni service', () => {
     expect(existsSync(join(h.ctx.dataDir, 'logs'))).toBe(true);
   });
 
+  test('install passes --allowed-hosts through to omni serve (R2)', () => {
+    const h = harness();
+    expect(h.run('install', '--host', '0.0.0.0', '--allowed-hosts', 'mymac.local')).toBe(0);
+    const plist = readFileSync(h.plist, 'utf8');
+    expect(plist).toContain('<string>--allowed-hosts</string>');
+    expect(plist).toContain('<string>mymac.local</string>');
+  });
+
   test('installing again replaces the running agent rather than stacking a second', () => {
     const h = harness({loaded: true});
     h.run('install');
