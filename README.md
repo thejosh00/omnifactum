@@ -546,9 +546,17 @@ omni submit 1nab5 --note "Installed vendor PPD 4.2." --json
 ```
 
 That moves the task to `review` — a queue you drain, the way `inbox` is a queue for things
-you have not thought about yet. `omni done` is refused outright for an agent's token,
-with `--force` as an explicit override. The token decides who the agent is, so setting
-`OMNI_ACTOR=you` does not get around it.
+you have not thought about yet. An agent's token may read anything, add tasks, add notes,
+change tags, submit, and move tasks between states other than `done`. Everything else is
+refused with exit code 2: completing (`omni done`, `omni mv <task> done`), deleting
+(`omni rm`, `DELETE`, discarding while clarifying), `--force` on any command, recording
+the weekly review, and writing projects or tickler items. Every write route and command
+declares who may use it, and one without a declaration is refused for everyone. The token
+decides who the agent is, so setting `OMNI_ACTOR=you` does not get around it.
+
+A token's actor must be `you` or `agent:<name>` (lowercase letters, digits, `-` and `_`).
+A token issued earlier for anything else (say `claude`) is refused until you re-issue it
+with `omni account token <account> agent:<name>` and revoke the old one.
 
 **You decide:**
 
