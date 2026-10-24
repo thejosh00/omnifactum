@@ -16,10 +16,13 @@ import {resolveDataDir} from './config.ts';
 import {flagValue, hasFlag, parseArgs} from './core/args.ts';
 import {nowIso} from './core/time.ts';
 import {renderJson, failure} from './core/serialize.ts';
-import {clientConfig, runRemote, Unauthorized, Unreachable, type Fetch} from './client.ts';
+import {clientConfig, runRemote, TOKEN_FILE, Unauthorized, Unreachable, type Fetch} from './client.ts';
 import {EXIT_BUSY, EXIT_OK, EXIT_USAGE} from './commands/context.ts';
 import {COMMAND_ALIASES, commandSummaries} from './commands/run.ts';
-import {DB_FILE, openDatabase} from './db/database.ts';
+import {BACKUP_DIR} from './db/backup.ts';
+import {DB_FILE, accountsWithoutPin, openDatabase} from './db/database.ts';
+import {dbFiles, secureDataDir} from './db/fileModes.ts';
+import {allowedHostsProblem, parseAllowedHosts} from './server/hostCheck.ts';
 import {accountCommand, type LocalContext} from './local/account.ts';
 import {backupCommand} from './local/backup.ts';
 import {importCommand} from './local/import.ts';
@@ -84,6 +87,8 @@ export interface ServeRequest {
   dbPath: string;
   hostname: string;
   port: number;
+  /** Extra `Host` names the server answers to (`--allowed-hosts` / `OMNI_ALLOWED_HOSTS`). */
+  allowedHosts: string[];
   development: boolean;
   out: (line?: string) => void;
 }
@@ -111,16 +116,35 @@ export async function run(options: RunOptions): Promise<number> {
 
   if (resolved === 'serve') {
     const args = parseArgs(rest, {boolean: ['dev'], alias: {p: 'port', H: 'host'}});
+    const allowedValue = flagValue(args, 'allowed-hosts') ?? env['OMNI_ALLOWED_HOSTS'] ?? '';
     const request: ServeRequest = {
       dbPath: join(directory, DB_FILE),
-      hostname: flagValue(args, 'host') ?? env['OMNI_HOST'] ?? '0.0.0.0',
+      hostname: flagValue(args, 'host') ?? env['OMNI_HOST'] ?? '127.0.0.1',
       port: Number(flagValue(args, 'port') ?? env['OMNI_PORT'] ?? 7777),
+      allowedHosts: parseAllowedHosts(allowedValue),
       development: hasFlag(args, 'dev'),
       out,
     };
     if (!Number.isInteger(request.port)) {
       err('omni: --port must be a number');
       return EXIT_USAGE;
+    }
+    const problem = allowedHostsProblem(allowedValue);
+    if (problem !== undefined) {
+      err(`omni: --allowed-hosts ${problem}`);
+      return EXIT_USAGE;
+    }
+    // Tighten what an older version created world-readable (fileModes.ts).
+    secureDataDir({dataDir: directory, files: [...dbFiles(DB_FILE), TOKEN_FILE], dirs: [BACKUP_DIR]});
+    if (!isLoopback(request.hostname)) {
+      const db = openDatabase(request.dbPath);
+      const open = accountsWithoutPin(db).map(account => account.name);
+      db.close();
+      if (open.length > 0) {
+        err(`omni: refusing to listen on ${request.hostname}: these accounts have no PIN, so anyone on the network could open them: ${open.join(', ')}`);
+        err(`give each one a PIN first (omni account pin <account> <pin>), or listen on 127.0.0.1 only`);
+        return EXIT_USAGE;
+      }
     }
     return (options.serve ?? serve)(request);
   }
@@ -198,14 +222,17 @@ async function serve(request: ServeRequest): Promise<number> {
     db,
     hostname: request.hostname,
     port: request.port,
+    allowedHosts: request.allowedHosts,
     development: request.development,
     backups: {dataDir: dirname(request.dbPath), log: line => request.out(line)},
   });
 
   request.out(`omni is serving ${request.dbPath}`);
+  request.out(`  listening on ${request.hostname}:${running.server.port}`);
   request.out(`  on this machine:  http://localhost:${running.server.port}`);
   if (request.hostname === '0.0.0.0') {
     for (const address of lanAddresses()) request.out(`  on your network:  http://${address}:${running.server.port}`);
+    request.out('  (other devices are refused until the name they use is allowed: omni serve --allowed-hosts <name>)');
   }
 
   // Runs until interrupted.
@@ -217,6 +244,12 @@ async function serve(request: ServeRequest): Promise<number> {
   await running.stop();
   db.close();
   return EXIT_OK;
+}
+
+/** Whether a bind address keeps the server to this machine. */
+export function isLoopback(hostname: string): boolean {
+  const name = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return name === 'localhost' || name === '::1' || /^127\.\d+\.\d+\.\d+$/.test(name);
 }
 
 function lanAddresses(): string[] {

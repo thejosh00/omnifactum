@@ -103,7 +103,8 @@ export interface ServiceContext {
 
 const USAGE = [
   'usage: omni service <command>',
-  '  install [--host h] [--port p]   run the server in the background, now and at login',
+  '  install [--host h] [--port p] [--allowed-hosts names]',
+  '                                  run the server in the background, now and at login',
   '  uninstall                       stop it and remove the launch agent',
   '  start | stop | restart          start, stop (until next login), or restart it',
   '  status                          whether it is running',
@@ -143,6 +144,8 @@ export function serviceCommand(ctx: ServiceContext, argv: readonly string[]): nu
       const port = flagValue(args, 'port');
       if (host !== undefined) extra.push('--host', host);
       if (port !== undefined) extra.push('--port', port);
+      const allowedHosts = flagValue(args, 'allowed-hosts');
+      if (allowedHosts !== undefined) extra.push('--allowed-hosts', allowedHosts);
 
       const cliPath = resolve(import.meta.dir, '..', 'cli.ts');
       const spec: ServiceSpec = {
