@@ -13,8 +13,9 @@
  * other writers are busy, into a temporary name that is only renamed into place once it
  * has passed an integrity check. A file named like a backup is therefore a good one.
  */
-import {existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync} from 'node:fs';
 import {join} from 'node:path';
+import {PRIVATE_DIR, PRIVATE_FILE} from './fileModes.ts';
 import {Database} from 'bun:sqlite';
 import {localDate} from '../core/time.ts';
 
@@ -50,13 +51,14 @@ export function backupDir(dataDir: string): string {
 
 /** Copy the database to `dir/name`, checked, and return the path. */
 export function takeBackup(db: Database, dir: string, name: string): string {
-  mkdirSync(dir, {recursive: true});
+  mkdirSync(dir, {recursive: true, mode: PRIVATE_DIR});
   const target = join(dir, name);
   const temp = join(dir, `.${name}.partial`);
   if (existsSync(temp)) unlinkSync(temp);
 
   try {
     db.query('VACUUM INTO ?').run(temp);
+    chmodSync(temp, PRIVATE_FILE);
     const copy = new Database(temp, {readonly: true});
     try {
       const result = copy.query('PRAGMA quick_check').get() as {quick_check: string} | null;
