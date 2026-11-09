@@ -31,7 +31,7 @@ flowchart LR
 | CLI | `src/cli.ts`, `src/client.ts` | `serve`, `service`, `backup`, `account`, `import` run locally; every other command is sent to the server |
 | Commands | `src/commands/` | Every command, run on the server against the caller's account (`src/commands/run.ts`); defined once for CLI and agents |
 | Server | `src/server/server.ts` | Bun.serve: web bundle at "/", sessions, event stream, API; tickler sweep every minute, backup check every hour |
-| Request guard | `src/server/hostCheck.ts`, `src/server/pinLimit.ts` | Host/Origin check before any `/api` route; 5 wrong PINs a minute per address, then 429 |
+| Request guard | `src/server/hostCheck.ts`, `src/server/pinLimit.ts` | Host/Origin check before any /api route; 5 wrong PINs a minute per address, then 429 |
 | API | `src/server/api.ts` | JSON routes, each write declaring its roles; intentions re-planned on the row, replacements need `If-Match` |
 | Pure core | `src/core/` | Tasks, capture syntax, clarify, recurrence, filters, roles (`src/core/roles.ts`), the agent contract (`src/core/agentsDoc.ts`) |
 | Store | `src/db/store.ts` | One account seen by one actor; runs core's planners against the row inside one transaction and records an event |
