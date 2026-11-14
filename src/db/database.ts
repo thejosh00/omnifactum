@@ -11,7 +11,8 @@
  */
 import {Database} from 'bun:sqlite';
 import {mkdirSync, writeFileSync} from 'node:fs';
-import {dirname} from 'node:path';
+import {dirname, join} from 'node:path';
+import {BACKUP_DIR, labelledName, takeBackup} from './backup.ts';
 import {PRIVATE_DIR, PRIVATE_FILE, dbFiles, tighten} from './fileModes.ts';
 
 export const DB_FILE = 'omni.db';
@@ -19,7 +20,7 @@ export const DB_FILE = 'omni.db';
 /** The accounts every new database starts with. Each is a separate set of lists. */
 export const DEFAULT_ACCOUNTS = ['work', 'home'] as const;
 
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: readonly string[] = [
   `
   CREATE TABLE accounts (
     id    INTEGER PRIMARY KEY,
@@ -158,6 +159,11 @@ export interface OpenOptions {
   busyTimeoutMs?: number;
 }
 
+/** Thrown, before any write, for a database a newer omni wrote. The CLI exits 4 on it. */
+export class NewerDatabase extends Error {}
+
+const userVersion = (db: Database) => (db.query('PRAGMA user_version').get() as {user_version: number}).user_version;
+
 /** Open (creating if need be) and bring the schema up to date. `:memory:` works for tests. */
 export function openDatabase(path: string, options: OpenOptions = {}): Database {
   if (path !== ':memory:') {
@@ -167,17 +173,33 @@ export function openDatabase(path: string, options: OpenOptions = {}): Database 
     writeFileSync(path, '', {flag: 'a', mode: PRIVATE_FILE});
     tighten(path, PRIVATE_FILE);
   }
+  // A database written by a newer omni is not this build's to touch. Its version is read through
+  // a read-only connection, so refusing writes nothing: closing it cannot checkpoint a leftover -wal.
+  const peek = path === ':memory:' ? undefined : new Database(path, {readonly: true});
+  const found = peek === undefined ? 0 : userVersion(peek);
+  peek?.close();
+  if (found > MIGRATIONS.length) {
+    throw new NewerDatabase(
+      `${path} is at schema version ${found}, but this omni only knows up to version ${MIGRATIONS.length}: a newer omni wrote it. ` +
+        `Nothing was changed. Run that newer omni, or restore a backup from ${join(dirname(path), BACKUP_DIR)}`,
+    );
+  }
   const db = new Database(path, {create: true, strict: true});
   db.exec('PRAGMA journal_mode = WAL');
   if (path !== ':memory:') for (const file of dbFiles(path)) tighten(file, PRIVATE_FILE);
   db.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.floor(options.busyTimeoutMs ?? 5000))}`);
   db.exec('PRAGMA foreign_keys = ON');
-  migrate(db);
+  migrate(db, path);
   return db;
 }
 
-function migrate(db: Database): void {
-  const current = (db.query('PRAGMA user_version').get() as {user_version: number}).user_version;
+function migrate(db: Database, path: string): void {
+  const current = userVersion(db);
+  // Migrations only go forward, and they run on the user's real data when a landed change
+  // restarts the server, so the way back is taken first. A new database has nothing to lose.
+  if (path !== ':memory:' && current > 0 && current < MIGRATIONS.length) {
+    takeBackup(db, join(dirname(path), BACKUP_DIR), labelledName(`pre-migration-v${current}`, new Date().toISOString()));
+  }
   for (let version = current; version < MIGRATIONS.length; version++) {
     db.transaction(() => {
       db.exec(MIGRATIONS[version]!);

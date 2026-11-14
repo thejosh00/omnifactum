@@ -20,7 +20,7 @@ import {clientConfig, runRemote, TOKEN_FILE, Unauthorized, Unreachable, type Fet
 import {EXIT_BUSY, EXIT_OK, EXIT_USAGE} from './commands/context.ts';
 import {COMMAND_ALIASES, commandSummaries} from './commands/run.ts';
 import {BACKUP_DIR} from './db/backup.ts';
-import {DB_FILE, accountsWithoutPin, openDatabase} from './db/database.ts';
+import {DB_FILE, NewerDatabase, accountsWithoutPin, openDatabase} from './db/database.ts';
 import {dbFiles, secureDataDir} from './db/fileModes.ts';
 import {allowedHostsProblem, parseAllowedHosts} from './server/hostCheck.ts';
 import {accountCommand, type LocalContext} from './local/account.ts';
@@ -93,7 +93,19 @@ export interface ServeRequest {
   out: (line?: string) => void;
 }
 
+/** A database this build must not open still ends as the error line or envelope, and exit 4. */
 export async function run(options: RunOptions): Promise<number> {
+  try {
+    return await runCommand(options);
+  } catch (error) {
+    if (!(error instanceof NewerDatabase)) throw error;
+    if (options.argv.includes('--json')) options.out(renderJson(failure(error.message, EXIT_BUSY)));
+    else options.err(`omni: ${error.message}`);
+    return EXIT_BUSY;
+  }
+}
+
+async function runCommand(options: RunOptions): Promise<number> {
   const {argv, out, err} = options;
   const env = options.env ?? process.env;
   const now = options.now ?? nowIso;

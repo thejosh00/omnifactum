@@ -24,7 +24,7 @@ export const BACKUP_DIR = 'backups';
 export const KEEP_DAILY = 14;
 
 const DAILY = /^omni-(\d{4}-\d{2}-\d{2})\.db$/;
-const ANY = /^omni-\d{4}-\d{2}-\d{2}(?:T\d{4})?\.db$/;
+const ANY = /^omni-(?:\d{4}-\d{2}-\d{2}(?:T\d{4})?|label-[\w-]+)\.db$/;
 
 function pad(value: number): string {
   return String(value).padStart(2, '0');
@@ -37,6 +37,11 @@ export function dailyName(at: Date): string {
 /** An on-demand backup, named to the minute so it never collides with a daily one. */
 export function manualName(at: Date): string {
   return `omni-${localDate(at)}T${pad(at.getHours())}${pad(at.getMinutes())}.db`;
+}
+
+/** `omni-label-pre-migration-v3-20260912T150000.db`: labelled, and never pruned (not a daily name). */
+export function labelledName(label: string, at: string): string {
+  return `omni-label-${label}-${at.replace(/[-:]|\.\d+|Z$/g, '')}.db`;
 }
 
 /** Daily backups beyond the newest `keep`, oldest first. Only daily ones are ever chosen. */
