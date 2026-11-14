@@ -1,6 +1,6 @@
 # omnifactum — architecture
 
-Last checked against: `ee9a915` on 2026-11-09
+Last checked against: `d51b0b4` on 2026-11-13
 
 ## Purpose and boundaries
 
@@ -46,7 +46,7 @@ flowchart LR
 
 | State | Where | Survives a crash? | Backed up? |
 |---|---|---|---|
-| The database (accounts, PINs, tokens, sessions, tasks, logs, projects, ticklers, weekly, events) | omni.db in the data directory (`--dir`, else OMNI_DIR, else ~/.omnifactum; `src/config.ts`) | yes: WAL, busy timeout 5 s | daily VACUUM INTO backups/, integrity-checked, renamed into place, newest 14 daily kept; `omni backup` copies never pruned (`src/db/backup.ts`) |
+| The database (accounts, PINs, tokens, sessions, tasks, logs, projects, ticklers, weekly, events) | omni.db in the data directory (`--dir`, else OMNI_DIR, else ~/.omnifactum; `src/config.ts`) | yes: WAL, busy timeout 5 s | daily VACUUM INTO backups/, integrity-checked, renamed into place, newest 14 daily kept; `omni backup` copies never pruned (`src/db/backup.ts`); plus an `omni-label-pre-migration-v<n>-<timestamp>.db` copy taken before an existing database is migrated, never pruned, shown by `omni backup list` (I24) |
 | The CLI's saved token | token in the data directory (`omni account token … --save`; `src/client.ts`) | n/a | no |
 | PIN-guess counts | memory (`src/server/pinLimit.ts`) | no: a restart forgets | no |
 | Server log (service only) | logs/serve.log in the data directory | n/a | no |
@@ -54,7 +54,9 @@ flowchart LR
 The server checks for today's backup on start and every hour, so a sleeping Mac still gets one.
 Backups sit on the same disk. Migrations are an append-only numbered list in
 `src/db/database.ts`, each applied in its own transaction and recorded in PRAGMA user_version;
-a failing one rolls back. No down migrations: undoing a bad one means restoring a backup.
+a failing one rolls back. No down migrations: undoing a bad one means restoring the pre-migration
+backup taken just before it (I24). A database at a higher version than the code knows is refused
+at open, unchanged, before the default accounts are seeded (I25).
 
 ## Trust boundaries
 
@@ -100,6 +102,8 @@ database, -wal, -shm, backups and token 0600; `omni serve` tightens looser ones 
 | I21 | `src/core/` is pure (no fs, db, clock, randomness, React) | **unenforced:** a rule in `README.md`; candidate for an import check |
 | I22 | Every omni command the skill uses exists | **unenforced:** no test reads `skills/omni-work/SKILL.md` (legenda has one) |
 | I23 | No AI in the app | **unenforced:** no model SDK in `package.json` today; nothing stops one being added |
+| I24 | An existing file-backed database is backed up as `pre-migration-v<n>` before it is migrated, and the daily prune never removes that backup | `tests/e2e/r16-pre-migration-backup.test.ts`: "an older file-backed database is backed up once, at its old version, before it is migrated", "a brand-new database and :memory: are not backed up", "a daily prune past the keep count leaves the pre-migration backup in place" |
+| I25 | A database newer than the code is refused (exit 4) with the file and its -wal byte-for-byte unchanged and no accounts seeded; one exactly at the code's version opens | `tests/e2e/r16-newer-database-refused.test.ts`: "a database one version newer than this build is refused, byte-for-byte unchanged, naming both versions and the backup folder", "a newer database with un-checkpointed -wal frames is refused, the main file and the -wal both byte-for-byte unchanged", "the CLI and omni serve refuse a newer database with exit 4, and the envelope with --json", "a database exactly at this build's version opens as before" |
 
 ## Decisions
 
@@ -111,6 +115,7 @@ There is no PLAN.md or DESIGN.md: `README.md` is the design record. Dates are co
 - 2026-09-24 · Tickler items, one-off and recurring · `next` stays literal: things arrive on their day · a6b95d9
 - 2026-10-24 · Deny-by-default roles on every route and command (R1) · an agent must never finish or delete work · 2205993, f64a06b
 - 2026-10-24 · Bind 127.0.0.1, Host/Origin check, PIN limit, private data files (R2) · LAN and DNS-rebinding exposure; copied from legenda · 6766fd8, ccd6c58, 1b4c355, acf28ae
+- 2026-11-13 · Back up before migrating; refuse a database newer than the code (R16) · a landed change migrates real data on restart, and an older build must not run against a schema it doesn't know; the version is read through a read-only connection so a refusal writes nothing · copied from legenda's R16 (2893883, cc6d4a5), itself from lectio's pre-migration backup · d51b0b4
 
 ## Family
 
@@ -146,5 +151,7 @@ bun run test            # typecheck + the whole suite
 - The omni-work skill in a real otto run (nothing tests it).
 - The launchd service on a real machine (`tests/unit/service.test.ts` checks the plist and calls).
 - That a failed migration leaves the database usable (no test makes one fail).
+- The pre-migration backup on a real upgrade: I24's tests build the older database by hand from
+  all the shipped migrations but the last. Restoring one is by hand.
 - `omni import` against a real old vault (`tests/store/scan.test.ts` covers the scanner only).
 - The web app's screens: no browser test.
