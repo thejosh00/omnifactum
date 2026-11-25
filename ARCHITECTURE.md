@@ -1,6 +1,6 @@
 # omnifactum — architecture
 
-Last checked against: `d51b0b4` on 2026-11-13
+Last checked against: `d51b0b4` on 2026-11-13; the Agent row, I1 and I1b against `1bbef66` on 2026-11-25
 
 ## Purpose and boundaries
 
@@ -67,7 +67,7 @@ the log for a person's token).
 | Actor | Gets in by | Can | Can't |
 |---|---|---|---|
 | You | `you` token (CLI), or a browser session after picking an account (and its PIN, if set) | everything | issue tokens over HTTP (no endpoint) |
-| Agent | `agent:<name>` token for one account | read anything, add, note, tag, submit, move between states other than done | done, rm/DELETE, clarify-discard, `--force`, record the weekly review, write projects or ticklers |
+| Agent | `agent:<name>` token for one account | read anything, add, note, tag, submit, move to a state other than done; over HTTP only: edit a task's title, body, due, defer, waiting-on and project (PATCH `/api/tasks/:ref`, `src/server/api.ts:743`) and clarify a task into next, waiting or someday (`src/server/api.ts:463`). **Not intended, but allowed today (I1b):** capture straight into done with `omni add -s done`, and move a task out of done | move a task to done, `done`, rm/DELETE, clarify-discard, `--force`, reorder a list, record the weekly review, write projects or ticklers |
 | Shell access as you | `omni account` opens the database directly | issue or revoke any token, set PINs | (outside the model) |
 | The network | binds 127.0.0.1 unless `--host`/OMNI_HOST; refuses a non-loopback bind while any account has no PIN; Host must be a loopback name with our port or allowed; foreign-Origin writes get 403 | reach "/" and the account list; open any PIN-less account in a browser (as `you`); the rest needs a token or session | DNS-rebind, or guess PINs faster than 5 a minute |
 
@@ -79,7 +79,8 @@ database, -wal, -shm, backups and token 0600; `omni serve` tightens looser ones 
 
 | # | Invariant | Enforced by |
 |---|---|---|
-| I1 | An agent token can't finish, delete or force: exit 2, task unchanged | `tests/e2e/agent-roles.test.ts`: "mv … done, done --force and rm --yes exit 2, and the task is unchanged", "DELETE, done, move to done, clarify-discard and force return the refused envelope" |
+| I1 | An agent token can't move a task to done, run `done` (with or without `--force`) or delete: exit 2, task unchanged | `tests/e2e/agent-roles.test.ts`: "mv … done, done --force and rm --yes exit 2, and the task is unchanged", "DELETE, done, move to done, clarify-discard and force return the refused envelope" |
+| I1b | An agent can't put work in done, or take it out, by any path | **not enforced** (R20, open). Two paths are open: `omni add -s done` by CLI creates a task in done (`src/commands/run.ts:97` has no `agentRefuses`; the HTTP route does refuse it, `src/server/api.ts:739`); and a move checks only the destination, so an agent can move a task out of done by CLI or HTTP (`src/commands/run.ts:115`, `src/server/api.ts:750`). No test covers either |
 | I2 | An agent can't record the weekly review or write ticklers | `tests/e2e/agent-roles.test.ts`: "recording the weekly review and the tickler routes are refused" |
 | I3 | Every write route and command declares its roles; undeclared means refused | `tests/e2e/agent-roles.test.ts`: "every non-GET route has a role declaration, and the table names every route", "every command has a role declaration, and the table names every command", "a command name the dispatcher does not know is refused, not run" |
 | I4 | A token's actor is `you` or `agent:<name>`, checked when made and when used | `tests/e2e/agent-roles.test.ts`: "createToken refuses an actor that is neither you nor agent:<name>", "an existing token with such an actor is refused, with how to re-issue it" |
@@ -146,6 +147,10 @@ bun run test            # typecheck + the whole suite
 
 ## Unverified
 
+- Known gap, not enforced (I1b, R20 open): an agent can capture a task straight into done with
+  `omni add -s done` (`src/commands/run.ts:97`).
+- Known gap, not enforced (I1b, R20 open): an agent can move a task out of done, reopening work
+  you accepted (`src/commands/run.ts:115`, `src/server/api.ts:750`).
 - The user's running instance: bind, allowed hosts, PINs, which tokens exist, and whether the
   omni-work otto run is set up as the README describes.
 - The omni-work skill in a real otto run (nothing tests it).
