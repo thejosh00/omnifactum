@@ -132,7 +132,10 @@ describe('omni service', () => {
   test('status reports the pid and how often it has restarted', () => {
     const h = harness();
     h.run('install');
+    // R30: status no longer always exits 0. It does here because no daily backup is stale
+    // (a data folder this new has had no time to take one); a stale one exits 1, tested below.
     expect(h.run('status')).toBe(0);
+    expect(h.out.some(line => line.startsWith('warning'))).toBe(false);
     expect(h.out).toContain('running, pid 4242');
     expect(h.out).toContain('restarted 2 times since it was loaded');
   });
