@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, test} from 'bun:test';
-import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
@@ -155,4 +155,83 @@ describe('omni service', () => {
     expect(serviceCommand({...h.ctx, platform: 'linux'}, ['install'])).not.toBe(0);
     expect(h.calls).toEqual([]);
   });
+});
+
+/** `omni service status` against a data folder whose newest daily backup was written `hours` ago (none when undefined). */
+function status(options: {backupHours?: number; manualHours?: number; dbHours?: number; installed?: boolean; running?: boolean}) {
+  const dir = mkdtempSync(join(tmpdir(), 'omni-status-'));
+  dirs.push(dir);
+  const now = new Date('2026-09-12T15:00:00Z');
+  const write = (path: string, hours: number) => {
+    writeFileSync(path, '');
+    const at = new Date(now.getTime() - hours * 3_600_000);
+    utimesSync(path, at, at);
+    return at;
+  };
+  mkdirSync(join(dir, 'backups'));
+  mkdirSync(join(dir, 'agents'));
+  // macOS moves a file's creation time back with its modification time, which is what makes the database "old".
+  write(join(dir, 'omni.db'), options.dbHours ?? 1000);
+  const written = options.backupHours === undefined ? undefined : write(join(dir, 'backups', 'omni-2026-09-10.db'), options.backupHours);
+  if (options.manualHours !== undefined) {
+    write(join(dir, 'backups', 'omni-2026-09-12T1400.db'), options.manualHours);
+    write(join(dir, 'backups', 'omni-label-pre-migration-v3-20260912T140000.db'), options.manualHours);
+  }
+  if (options.installed !== false) writeFileSync(join(dir, 'agents', `${SERVICE_LABEL}.plist`), '');
+  const out: string[] = [];
+  const ctx = {
+    dataDir: dir,
+    agentsDir: join(dir, 'agents'),
+    platform: 'darwin',
+    uid: 501,
+    now: () => now,
+    out: (line?: string) => out.push(line ?? ''),
+    err: () => {},
+    launchctl: () => (options.running === false ? {code: 113, stdout: '', stderr: 'Could not find service'} : {code: 0, stdout: 'pid = 42', stderr: ''}),
+  };
+  const code = serviceCommand(ctx as ServiceContext, ['status']);
+  return {code, out, written};
+}
+
+test('service status warns and exits 1 when the daily backup is stale, running or not', () => {
+  const stale = status({backupHours: 37});
+  expect(stale.out[0]).toBe('running, pid 42');
+  expect(stale.out[1]).toStartWith('last backup: omni-2026-09-10.db');
+  expect(stale.out[2]).toBe(`warning: no backup since ${stale.written!.toLocaleString()}: see serve.log`);
+  expect(stale.code).toBe(1);
+  // A fresh on-demand or pre-migration backup beside it changes nothing.
+  const beside = status({backupHours: 37, manualHours: 1});
+  expect(beside.out).toContain(`warning: no backup since ${beside.written!.toLocaleString()}: see serve.log`);
+  expect(beside.code).toBe(1);
+  // Installed but stopped: the backup line and the warning are still printed.
+  const stopped = status({backupHours: 37, running: false});
+  expect(stopped.out[0]).toBe('installed, not running');
+  expect(stopped.out[1]).toStartWith('last backup: omni-2026-09-10.db');
+  expect(stopped.out.some(line => line.startsWith('warning: no backup since'))).toBe(true);
+  expect(stopped.code).toBe(1);
+  // Not installed (omni serve under another supervisor): the backups are still the folder's.
+  const bare = status({backupHours: 37, installed: false});
+  expect(bare.out[0]).toBe('not installed');
+  expect(bare.out.some(line => line.startsWith('warning: no backup since'))).toBe(true);
+  expect(bare.code).toBe(1);
+});
+
+test('service status exits 0 without a warning when the daily backup is fresh', () => {
+  for (const running of [true, false]) {
+    const fresh = status({backupHours: 35, running});
+    expect(fresh.out.some(line => line.startsWith('warning'))).toBe(false);
+    expect(fresh.out[1]).toStartWith('last backup: omni-2026-09-10.db');
+    expect(fresh.code).toBe(0);
+  }
+});
+
+test('service status with no daily backup warns only when the database is itself more than 36 hours old', () => {
+  const old = status({dbHours: 37});
+  expect(old.out).toContain('no backups yet');
+  expect(old.out).toContain('warning: no daily backup has been taken: see serve.log');
+  expect(old.code).toBe(1);
+  const young = status({dbHours: 35});
+  expect(young.out).toContain('no backups yet');
+  expect(young.out.some(line => line.startsWith('warning'))).toBe(false);
+  expect(young.code).toBe(0);
 });

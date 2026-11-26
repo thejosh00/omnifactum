@@ -31,6 +31,7 @@ import {WeeklyBanner} from './Weekly.tsx';
 import {Detail, type DetailActions} from './Detail.tsx';
 import {Confirm, Help, MoveMenu, Prompt, type PromptRequest} from './Dialogs.tsx';
 import {intentFor, type Intent} from './keys.ts';
+import {BackupWarning} from './BackupWarning.tsx';
 
 const LIST_BLURBS: Record<TaskState, string> = {
   inbox: 'Captured, not yet thought about',
@@ -758,6 +759,7 @@ function Workspace({session, onSignedOut}: {session: Session; onSignedOut: () =>
           Sign out
         </button>
       </header>
+      <BackupWarning backup={session.backup} />
 
       <nav className="tabs" aria-label="Lists">
         {TASK_STATES.map((state, position) => (

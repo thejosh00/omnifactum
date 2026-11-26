@@ -22,6 +22,8 @@ import {localDate} from '../core/time.ts';
 export const BACKUP_DIR = 'backups';
 /** How many daily backups to keep. On-demand ones are never pruned. */
 export const KEEP_DAILY = 14;
+/** A daily backup older than this has stopped: a day, plus half a day for a laptop that slept through one. */
+export const BACKUP_STALE_MS = 36 * 60 * 60_000;
 
 const DAILY = /^omni-(\d{4}-\d{2}-\d{2})\.db$/;
 const ANY = /^omni-(?:\d{4}-\d{2}-\d{2}(?:T\d{4})?|label-[\w-]+)\.db$/;
@@ -113,4 +115,22 @@ export function listBackups(dataDir: string): BackupInfo[] {
       return {name, path, bytes: stat.size, modified: stat.mtime, daily: DAILY.test(name)};
     })
     .sort((a, b) => b.modified.getTime() - a.modified.getTime());
+}
+
+export interface BackupStatus {
+  /** When the newest daily backup was written, or null when there is none. */
+  last: string | null;
+  stale: boolean;
+}
+
+/**
+ * Whether the daily backup has stopped. Stale when the newest daily backup was written more than
+ * `BACKUP_STALE_MS` before `now`; or, with none at all, when `since` (when the server started, or
+ * when the database file was made) is itself that long ago. On-demand, labelled and pre-migration
+ * backups never count.
+ */
+export function backupStatus(dataDir: string, now: Date, since: Date): BackupStatus {
+  const latest = listBackups(dataDir).find(backup => backup.daily);
+  const from = latest?.modified ?? since;
+  return {last: latest?.modified.toISOString() ?? null, stale: now.getTime() - from.getTime() > BACKUP_STALE_MS};
 }

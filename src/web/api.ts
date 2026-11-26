@@ -22,6 +22,8 @@ export interface Session {
   account: string;
   actor: string;
   accounts: AccountInfo[];
+  /** The daily backup: when the newest was written, and whether it has stopped (see backupStatus in src/db/backup.ts). */
+  backup?: {last: string | null; stale: boolean};
 }
 
 export interface TaskList {

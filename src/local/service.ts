@@ -9,11 +9,12 @@
  * `install`, otherwise Bun on this checkout's `src/cli.ts` — in which case a code change
  * takes effect on `omni service restart`, with no rebuild.
  */
-import {existsSync, mkdirSync, unlinkSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, statSync, unlinkSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {basename, join, resolve} from 'node:path';
 import {flagValue, parseArgs} from '../core/args.ts';
-import {listBackups} from '../db/backup.ts';
+import {backupStatus, listBackups} from '../db/backup.ts';
+import {DB_FILE} from '../db/database.ts';
 import {EXIT_ERROR, EXIT_OK, EXIT_USAGE} from '../commands/context.ts';
 
 export const SERVICE_LABEL = 'com.omnifactum.serve';
@@ -99,6 +100,7 @@ export interface ServiceContext {
   platform?: string;
   uid?: number;
   execPath?: string;
+  now?: () => Date;
 }
 
 const USAGE = [
@@ -220,25 +222,28 @@ export function serviceCommand(ctx: ServiceContext, argv: readonly string[]): nu
     }
 
     case 'status': {
-      // Always exits 0: it answers a question, and "not running" is a fine answer.
-      if (!existsSync(plistPath)) {
-        ctx.out('not installed');
-        return EXIT_OK;
+      // "Not running" is a fine answer and exits 0; a daily backup that has stopped is not, and exits 1 (I26).
+      const printed = existsSync(plistPath) ? launchctl(['print', target]) : undefined;
+      if (printed === undefined) ctx.out('not installed');
+      else if (printed.code !== 0) ctx.out('installed, not running');
+      else {
+        const pid = /\bpid = (\d+)/.exec(printed.stdout)?.[1];
+        const runs = /\bruns = (\d+)/.exec(printed.stdout)?.[1];
+        ctx.out(pid === undefined ? 'installed, waiting to restart' : `running, pid ${pid}`);
+        const restarts = runs === undefined ? 0 : Number(runs) - 1;
+        if (restarts > 0) ctx.out(`restarted ${restarts === 1 ? 'once' : `${restarts} times`} since it was loaded`);
       }
-      const printed = launchctl(['print', target]);
-      if (printed.code !== 0) {
-        ctx.out('installed, not running');
-        return EXIT_OK;
-      }
-      const pid = /\bpid = (\d+)/.exec(printed.stdout)?.[1];
-      const runs = /\bruns = (\d+)/.exec(printed.stdout)?.[1];
-      ctx.out(pid === undefined ? 'installed, waiting to restart' : `running, pid ${pid}`);
-      const restarts = runs === undefined ? 0 : Number(runs) - 1;
-      if (restarts > 0) ctx.out(`restarted ${restarts === 1 ? 'once' : `${restarts} times`} since it was loaded`);
+      // The backups are read from the folder, not asked of the server: a stopped server is when it matters.
+      const now = ctx.now?.() ?? new Date();
+      const dbPath = join(ctx.dataDir, DB_FILE);
+      if (printed === undefined && !existsSync(dbPath)) return EXIT_OK;
       const latest = listBackups(ctx.dataDir)[0];
       ctx.out(latest === undefined ? 'no backups yet' : `last backup: ${latest.name}, ${latest.modified.toLocaleString()}`);
+      // With no daily backup at all, the database's own age stands in: a new install has had no time to take one.
+      const backup = backupStatus(ctx.dataDir, now, existsSync(dbPath) ? statSync(dbPath).birthtime : now);
+      if (backup.stale) ctx.out(backup.last === null ? 'warning: no daily backup has been taken: see serve.log' : `warning: no backup since ${new Date(backup.last).toLocaleString()}: see serve.log`);
       ctx.out(`log: ${logPath}`);
-      return EXIT_OK;
+      return backup.stale ? EXIT_ERROR : EXIT_OK;
     }
 
     case 'logs': {

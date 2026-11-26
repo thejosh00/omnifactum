@@ -14,7 +14,7 @@ import {EXIT_NOT_FOUND, EXIT_USAGE} from '../commands/context.ts';
 import {callerForSession, callerForToken, createSession, endSession, InvalidActorToken, type Caller} from '../db/auth.ts';
 import {checkPin, findAccount, listAccounts} from '../db/database.ts';
 import {EventHub, eventToJson, eventsSince, latestEventSeq} from '../db/events.ts';
-import {dailyBackup} from '../db/backup.ts';
+import {backupStatus, dailyBackup} from '../db/backup.ts';
 import {Store} from '../db/store.ts';
 import {sweepRecurring, sweepTickler} from '../db/tickler.ts';
 import {errorResponse, handleApi, json} from './api.ts';
@@ -38,6 +38,8 @@ export interface ServeOptions {
   tickler?: boolean;
   /** Take a daily backup into `<dataDir>/backups`. Off unless given. */
   backups?: {dataDir: string; log?: (line: string) => void};
+  /** The data folder, for reporting on its backups without taking any (tests). Defaults to `backups.dataDir`. */
+  dataDir?: string;
   /** Extra `Host` names to answer to besides localhost, 127.0.0.1 and [::1] (hostCheck.ts). */
   allowedHosts?: readonly string[];
   /** Wrong-PIN limiter; one per server unless a test gives its own. */
@@ -187,6 +189,9 @@ export function startServer(options: ServeOptions): RunningServer {
       return refused === undefined ? handler(request) : errorResponse(refused, EXIT_USAGE, 403);
     };
 
+  const dataDir = options.dataDir ?? options.backups?.dataDir;
+  const startedAt = new Date(now());
+
   const server: Server<undefined> = Bun.serve({
     port: options.port ?? 7777,
     hostname: options.hostname ?? '127.0.0.1',
@@ -201,7 +206,9 @@ export function startServer(options: ServeOptions): RunningServer {
           const caller = callerOf(db, request);
           if (caller === undefined) return unauthorized();
           if (caller instanceof Response) return caller;
-          return json({ok: true, account: caller.account.name, actor: caller.actor, accounts: accountsJson(db)});
+          // Signed-in callers only: whether the daily backup has stopped (I26). Omitted when the server has no data folder.
+          const backup = dataDir === undefined ? undefined : backupStatus(dataDir, new Date(now()), startedAt);
+          return json({ok: true, account: caller.account.name, actor: caller.actor, accounts: accountsJson(db), ...(backup === undefined ? {} : {backup})});
         }),
         POST: guard(request => login(db, request, now, limiter, server.requestIP(request)?.address ?? 'unknown')),
         DELETE: guard(request => {

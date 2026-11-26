@@ -1095,3 +1095,14 @@ button.link.meta-project:hover {
   margin: 4px 0;
   width: 100%;
 }
+
+/* The daily backup has stopped (BackupWarning.tsx): on every page until it runs again. */
+.backup-warning {
+  margin: 0;
+  padding: 8px 16px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  text-align: center;
+}
