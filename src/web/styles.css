@@ -243,6 +243,9 @@ code {
   grid-template-rows: auto auto 1fr;
   min-height: 100vh;
 }
+.app:has(> .backup-warning) {
+  grid-template-rows: auto auto auto 1fr;
+}
 .app.with-detail {
   grid-template-columns: minmax(0, 1fr) minmax(360px, 44%);
 }
@@ -427,7 +430,7 @@ code {
 /* --- detail -------------------------------------------------------------------- */
 
 .detail {
-  grid-row: 3;
+  grid-row: -2; /* the last row, beside the list, with or without the backup banner */
   grid-column: 2;
   background: var(--surface);
   border-left: 1px solid var(--line);
@@ -1098,6 +1101,7 @@ button.link.meta-project:hover {
 
 /* The daily backup has stopped (BackupWarning.tsx): on every page until it runs again. */
 .backup-warning {
+  grid-column: 1 / -1;
   margin: 0;
   padding: 8px 16px;
   background: var(--danger-soft);
